@@ -88,44 +88,9 @@ public class TunerHost : ITunerHost
         }
     }
 
-    public async Task<ILiveStream> GetChannelStream(string channelId, string streamId, IList<ILiveStream> currentLiveStreams, CancellationToken cancellationToken)
+    public Task<ILiveStream> GetChannelStream(string channelId, string streamId, IList<ILiveStream> currentLiveStreams, CancellationToken cancellationToken)
     {
-        if(_channels.IsEmpty)
-            await FillChannelCache(cancellationToken);
-
-        if (string.IsNullOrWhiteSpace(channelId))
-            throw new ArgumentException("The channel identifier must not be empty.", nameof(channelId));
-
-        if (!_channels.TryGetValue(channelId, out var channelTuple))
-        {
-            throw new FileNotFoundException($"Channel '{channelId}' was not found.");
-        }
-
-        var device = _satipDevices.FirstOrDefault(d => channelId.StartsWith(d.UniqueDeviceName + "/", StringComparison.OrdinalIgnoreCase))
-            ?? throw new FileNotFoundException($"No SAT>IP device was found for channel '{channelId}'.");
-
-        var liveStream = new SatIpLiveStream(device.UniqueDeviceName);
-        var mediaSource = new MediaSourceInfo
-        {
-            Path = channelTuple.Item2.Path,
-            Protocol = channelTuple.Item2.Protocol,
-            Container = "ts",
-            Id = channelTuple.Item2.Id,
-            IgnoreDts = channelTuple.Item2.IgnoreDts,
-            IsRemote = channelTuple.Item2.IsRemote,
-            RequiresOpening = true,
-            RequiresClosing = true,
-            IsInfiniteStream = true,
-            AnalyzeDurationMs = 3000,
-            SupportsProbing = false,
-            SupportsDirectPlay = false,
-            SupportsDirectStream = true,
-            SupportsTranscoding = true,
-            MediaStreams = channelTuple.Item2.MediaStreams
-        };
-        liveStream.MediaSource = mediaSource;
-
-        return liveStream;
+        throw new NotImplementedException("SAT>IP media sources are played directly without opening an ILiveStream.");
     }
 
     public async Task<List<MediaSourceInfo>> GetChannelStreamMediaSources(string channelId, CancellationToken cancellationToken)

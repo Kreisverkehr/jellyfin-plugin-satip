@@ -54,13 +54,13 @@ public class M3uParser
                         IgnoreDts = true,
                         Id = Guid.NewGuid().ToString(),
                         IsRemote = false,
-                        RequiresOpening = true,
-                        RequiresClosing = true,
+                        RequiresOpening = false,
+                        RequiresClosing = false,
                         IsInfiniteStream = true,
                         AnalyzeDurationMs = 3000,
                         SupportsProbing = false,
                         SupportsDirectStream = true,
-                        SupportsDirectPlay = false,
+                        SupportsDirectPlay = true,
                         SupportsTranscoding = true,
                         MediaStreams =
                         [

@@ -26,6 +26,7 @@ public class TunerHost : ITunerHost
     private readonly IUpnpClient _upnpClient;
     private readonly ConcurrentDictionary<string, Tuple<ChannelInfo, MediaSourceInfo>> _channels = new(StringComparer.OrdinalIgnoreCase);
     private HashSet<string> _cachedDeviceIds = new(StringComparer.OrdinalIgnoreCase);
+    private bool _channelCacheLoaded;
 
     public string Name => "SAT>IP Tuner";
 
@@ -47,7 +48,6 @@ public class TunerHost : ITunerHost
             from satIpRes in satIpDevice.SatIpCapabilities?.Split(',') ?? ["-1"]
             select CreateTunerHostInfo(satIpDevice, satIpRes);
 
-        _upnpClient.RunDiscoverDevicesAsync(SATIP_DEVICE_TYPE).GetAwaiter().GetResult();
     }
 
     public async Task<List<TunerHostInfo>> DiscoverDevices(int discoveryDurationMs, CancellationToken cancellationToken)
@@ -60,7 +60,7 @@ public class TunerHost : ITunerHost
     public async Task<List<ChannelInfo>> GetChannels(bool enableCache, CancellationToken cancellationToken)
     {
         var configuredDeviceIds = GetConfiguredDeviceIds();
-        if (!enableCache || _channels.IsEmpty || !_cachedDeviceIds.SetEquals(configuredDeviceIds))
+        if (!enableCache || !_channelCacheLoaded || !_cachedDeviceIds.SetEquals(configuredDeviceIds))
         {
             await FillChannelCache(configuredDeviceIds, cancellationToken);
         }
@@ -70,11 +70,13 @@ public class TunerHost : ITunerHost
 
     private async Task FillChannelCache(HashSet<string> configuredDeviceIds, CancellationToken cancellationToken)
     {
+        _channelCacheLoaded = false;
         _channels.Clear();
 
         if (configuredDeviceIds.Count == 0)
         {
             _cachedDeviceIds = configuredDeviceIds;
+            _channelCacheLoaded = true;
             _logger.LogInformation("No SAT>IP tuner hosts are configured");
             return;
         }
@@ -83,7 +85,14 @@ public class TunerHost : ITunerHost
             .Select(GetSatIpServerId)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        await _upnpClient.RunDiscoverDevicesAsync(SATIP_DEVICE_TYPE, waitForResponses: true, cancellationToken: cancellationToken);
+        foreach (var serverId in configuredServerIds)
+        {
+            if (_satipDevices.Any(device => string.Equals(device.UniqueDeviceName, serverId, StringComparison.OrdinalIgnoreCase)))
+                continue;
+
+            _logger.LogInformation("SAT>IP server {DeviceId} is not known; searching for its UDN", serverId);
+            await _upnpClient.RunDiscoverDevicesAsync(serverId, waitForResponses: true, cancellationToken: cancellationToken);
+        }
 
         foreach (var device in _satipDevices.Where(d => configuredServerIds.Contains(d.UniqueDeviceName)))
         {
@@ -99,6 +108,7 @@ public class TunerHost : ITunerHost
         }
 
         _cachedDeviceIds = configuredDeviceIds;
+        _channelCacheLoaded = true;
     }
 
     private HashSet<string> GetConfiguredDeviceIds()
@@ -142,7 +152,7 @@ public class TunerHost : ITunerHost
     public async Task<List<MediaSourceInfo>> GetChannelStreamMediaSources(string channelId, CancellationToken cancellationToken)
     {
         var configuredDeviceIds = GetConfiguredDeviceIds();
-        if (_channels.IsEmpty || !_cachedDeviceIds.SetEquals(configuredDeviceIds))
+        if (!_channelCacheLoaded || !_cachedDeviceIds.SetEquals(configuredDeviceIds))
             await FillChannelCache(configuredDeviceIds, cancellationToken);
 
         return _channels.TryGetValue(channelId, out var channelTuple)

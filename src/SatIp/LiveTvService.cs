@@ -49,7 +49,7 @@ public class LiveTvService : ILiveTvService
         throw new NotImplementedException();
     }
 
-    public Task<SeriesTimerInfo> GetNewTimerDefaultsAsync(CancellationToken cancellationToken, ProgramInfo program = null)
+    public Task<SeriesTimerInfo> GetNewTimerDefaultsAsync(CancellationToken cancellationToken, ProgramInfo? program = null)
     {
         throw new NotImplementedException();
     }

@@ -1,8 +1,10 @@
 using System.Collections.Concurrent;
 using System.Web;
+using Kreisverkehr.Jellyfin.Plugin.SatIp.Extensions;
 using Kreisverkehr.Jellyfin.Plugin.SatIp.Upnp;
 using Kreisverkehr.NetUpnp;
 using Kreisverkehr.NetUpnp.Model;
+using MediaBrowser.Common.Configuration;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.LiveTv;
 using MediaBrowser.Model.Dto;
@@ -15,12 +17,15 @@ namespace Kreisverkehr.Jellyfin.Plugin.SatIp;
 public class TunerHost : ITunerHost
 {
     private const string SATIP_DEVICE_TYPE = "urn:ses-com:device:SatIPServer:1";
+    private const char SATIP_DEVICE_ID_SEPARATOR = '/';
     private readonly ILogger<TunerHost> _logger;
+    private readonly IConfigurationManager _configurationManager;
     private readonly IUpnpDeviceCollection _upnpDeviceCollection;
     private readonly IEnumerable<SatIpDevice> _satipDevices;
     private readonly IEnumerable<TunerHostInfo> _tunerHostInfos;
     private readonly IUpnpClient _upnpClient;
     private readonly ConcurrentDictionary<string, Tuple<ChannelInfo, MediaSourceInfo>> _channels = new(StringComparer.OrdinalIgnoreCase);
+    private HashSet<string> _cachedDeviceIds = new(StringComparer.OrdinalIgnoreCase);
 
     public string Name => "SAT>IP Tuner";
 
@@ -28,9 +33,10 @@ public class TunerHost : ITunerHost
 
     public bool IsSupported => true;
 
-    public TunerHost(ILogger<TunerHost> logger, IUpnpDeviceCollection upnpDeviceCollection, IUpnpClient upnpClient)
+    public TunerHost(ILogger<TunerHost> logger, IConfigurationManager configurationManager, IUpnpDeviceCollection upnpDeviceCollection, IUpnpClient upnpClient)
     {
         _logger = logger;
+        _configurationManager = configurationManager;
         _upnpClient = upnpClient;
         _upnpDeviceCollection = upnpDeviceCollection;
         _satipDevices = _upnpDeviceCollection
@@ -53,19 +59,33 @@ public class TunerHost : ITunerHost
 
     public async Task<List<ChannelInfo>> GetChannels(bool enableCache, CancellationToken cancellationToken)
     {
-        if (!enableCache || _channels.IsEmpty)
+        var configuredDeviceIds = GetConfiguredDeviceIds();
+        if (!enableCache || _channels.IsEmpty || !_cachedDeviceIds.SetEquals(configuredDeviceIds))
         {
-            await FillChannelCache(cancellationToken);
+            await FillChannelCache(configuredDeviceIds, cancellationToken);
         }
 
         return _channels.Values.Select(t => t.Item1).ToList();
     }
 
-    private async Task FillChannelCache(CancellationToken cancellationToken)
+    private async Task FillChannelCache(HashSet<string> configuredDeviceIds, CancellationToken cancellationToken)
     {
+        _channels.Clear();
+
+        if (configuredDeviceIds.Count == 0)
+        {
+            _cachedDeviceIds = configuredDeviceIds;
+            _logger.LogInformation("No SAT>IP tuner hosts are configured");
+            return;
+        }
+
+        var configuredServerIds = configuredDeviceIds
+            .Select(GetSatIpServerId)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
         await _upnpClient.RunDiscoverDevicesAsync(SATIP_DEVICE_TYPE, waitForResponses: true, cancellationToken: cancellationToken);
 
-        foreach (var device in _satipDevices)
+        foreach (var device in _satipDevices.Where(d => configuredServerIds.Contains(d.UniqueDeviceName)))
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -77,6 +97,32 @@ public class TunerHost : ITunerHost
 
             await ReadChannelsFromM3U(device, cancellationToken);
         }
+
+        _cachedDeviceIds = configuredDeviceIds;
+    }
+
+    private HashSet<string> GetConfiguredDeviceIds()
+    {
+        var liveTvOptions = _configurationManager.GetLiveTvOptions();
+        if (liveTvOptions is null)
+        {
+            _logger.LogWarning("Jellyfin Live TV configuration store was not found");
+            return [];
+        }
+
+        return liveTvOptions?.TunerHosts?
+            .Where(t =>
+                string.Equals(t.Type, "satip", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(t.Type, "SAT>IP", StringComparison.OrdinalIgnoreCase))
+            .Select(t => t.DeviceId)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase) ?? [];
+    }
+
+    private static string GetSatIpServerId(string deviceId)
+    {
+        var separatorIndex = deviceId.IndexOf(SATIP_DEVICE_ID_SEPARATOR);
+        return separatorIndex < 0 ? deviceId : deviceId[..separatorIndex];
     }
 
     private async Task ReadChannelsFromM3U(SatIpDevice device, CancellationToken cancellationToken)
@@ -95,22 +141,31 @@ public class TunerHost : ITunerHost
 
     public async Task<List<MediaSourceInfo>> GetChannelStreamMediaSources(string channelId, CancellationToken cancellationToken)
     {
-        if (_channels.IsEmpty)
-            await FillChannelCache(cancellationToken);
+        var configuredDeviceIds = GetConfiguredDeviceIds();
+        if (_channels.IsEmpty || !_cachedDeviceIds.SetEquals(configuredDeviceIds))
+            await FillChannelCache(configuredDeviceIds, cancellationToken);
 
         return _channels.TryGetValue(channelId, out var channelTuple)
             ? [channelTuple.Item2]
             : [];
     }
 
-    private static TunerHostInfo CreateTunerHostInfo(SatIpDevice device, string satIpRes) => new()
+    private static TunerHostInfo CreateTunerHostInfo(SatIpDevice device, string satIpRes)
     {
-        Id = device.UniqueDeviceName + "/" + satIpRes,
-        DeviceId = device.UniqueDeviceName,
-        FriendlyName = device.FriendlyName,
-        Url = device.ModelUrl,
-        Source = "SAT>IP",
-        Type = "satip",
-        TunerCount = int.Parse(satIpRes.Split('-')[1]),
-    };
+        var capabilityParts = satIpRes.Split('-', 2);
+        var modulationSystem = capabilityParts[0];
+        var friendlyName = string.IsNullOrWhiteSpace(modulationSystem)
+            ? device.FriendlyName
+            : $"{device.FriendlyName} ({modulationSystem})";
+
+        return new TunerHostInfo
+        {
+            DeviceId = $"{device.UniqueDeviceName}{SATIP_DEVICE_ID_SEPARATOR}{modulationSystem}",
+            FriendlyName = friendlyName,
+            Url = device.ModelUrl,
+            Source = "SAT>IP",
+            Type = "satip",
+            TunerCount = int.Parse(capabilityParts[1]),
+        };
+    }
 }

@@ -25,6 +25,12 @@ The plugin discovers SAT>IP servers on the network and reads channel entries fro
 
 Channel discovery currently depends on the server providing an M3U playlist. Some SAT>IP servers may not provide one, since the playlist is optional.
 
+### Tuner Setup Limitation
+
+Jellyfin's tuner setup currently transfers the selected SAT>IP device into the setup form, but does not visibly show which device was selected. The selection must therefore be trusted for now. After selecting a device, you still need to click **Save** to add it to Jellyfin.
+
+Showing a visible confirmation of the selected device before saving requires changes to Jellyfin Web; the plugin cannot change this built-in setup form on its own.
+
 ### Planned
 
 - Make the plugin available for installation through a Jellyfin plugin repository.

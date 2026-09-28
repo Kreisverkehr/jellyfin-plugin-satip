@@ -18,6 +18,7 @@ public class TunerHost : ITunerHost
 {
     private const string SATIP_DEVICE_TYPE = "urn:ses-com:device:SatIPServer:1";
     private const char SATIP_DEVICE_ID_SEPARATOR = '/';
+    private const string SATIP_TUNER_HOST_TYPE = "satip";
     private readonly ILogger<TunerHost> _logger;
     private readonly IConfigurationManager _configurationManager;
     private readonly IUpnpDeviceCollection _upnpDeviceCollection;
@@ -30,7 +31,7 @@ public class TunerHost : ITunerHost
 
     public string Name => "SAT>IP Tuner";
 
-    public string Type => "SAT>IP";
+    public string Type => SATIP_TUNER_HOST_TYPE;
 
     public bool IsSupported => true;
 
@@ -121,9 +122,7 @@ public class TunerHost : ITunerHost
         }
 
         return liveTvOptions?.TunerHosts?
-            .Where(t =>
-                string.Equals(t.Type, "satip", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(t.Type, "SAT>IP", StringComparison.OrdinalIgnoreCase))
+            .Where(t => string.Equals(t.Type, SATIP_TUNER_HOST_TYPE, StringComparison.OrdinalIgnoreCase))
             .Select(t => t.DeviceId)
             .Where(id => !string.IsNullOrWhiteSpace(id))
             .ToHashSet(StringComparer.OrdinalIgnoreCase) ?? [];
@@ -172,9 +171,9 @@ public class TunerHost : ITunerHost
         {
             DeviceId = $"{device.UniqueDeviceName}{SATIP_DEVICE_ID_SEPARATOR}{modulationSystem}",
             FriendlyName = friendlyName,
-            Url = device.ModelUrl,
-            Source = "SAT>IP",
-            Type = "satip",
+            Url = device.PresentationUrl,
+            Source = modulationSystem,
+            Type = SATIP_TUNER_HOST_TYPE,
             TunerCount = int.Parse(capabilityParts[1]),
         };
     }

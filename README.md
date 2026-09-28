@@ -11,6 +11,10 @@ I started this project because I was looking for a straightforward way to use my
 
 I chose SAT>IP because it is a standard that may also help other people with a similar setup, beyond my own FRITZ!Box use case.
 
+## Use of AI
+
+I use AI tools for research, code generation, and bug hunting. I personally review all AI-generated code and clean it up where necessary. My goal is to understand and be able to trace every line of code in this project.
+
 ## Project Status & Roadmap
 
 This plugin is at a very early stage of development. Significant code and functionality changes are likely, and breaking changes should be expected. It is not ready for production use and should not be deployed in a production environment.
@@ -23,6 +27,7 @@ Channel discovery currently depends on the server providing an M3U playlist. Som
 
 ### Planned
 
+- Make the plugin available for installation through a Jellyfin plugin repository.
 - Retrieve and integrate EPG data from the SAT>IP server.
 - Explore a manual channel scan that does not depend on an M3U playlist.
 

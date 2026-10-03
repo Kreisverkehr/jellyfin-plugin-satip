@@ -67,6 +67,7 @@ public class TunerHost : ISatIpTunerHost
 
     public async Task<List<ChannelInfo>> GetChannels(bool enableCache, CancellationToken cancellationToken)
     {
+        RegisterListingsProvider();
         var configuredDeviceIds = GetConfiguredDeviceIds();
         if (!enableCache || !_channelCacheLoaded || !_cachedDeviceIds.SetEquals(configuredDeviceIds))
         {
@@ -74,6 +75,27 @@ public class TunerHost : ISatIpTunerHost
         }
 
         return _channels.Values.Select(t => t.Item1).ToList();
+    }
+
+    private void RegisterListingsProvider()
+    {
+        var options = _configurationManager.GetLiveTvOptions();
+        if(options is null)
+        {
+            _logger.LogWarning("Jellyfin Live TV configuration store was not found");
+            return;
+        }
+
+        if(options.ListingProviders?.Any(p => string.Equals(p.Type, "satip", StringComparison.OrdinalIgnoreCase)) ?? false)
+            return; 
+
+        var listingsMgr = _serviceProvider.GetRequiredService<IListingsManager>();
+        listingsMgr.SaveListingProvider(new ListingsProviderInfo
+        {
+            Type = "satip",
+            EnableAllTuners = false,
+            EnabledTuners = GetConfiguredDeviceIds().ToArray(),
+        }, false, false);
     }
 
     private async Task FillChannelCache(HashSet<string> configuredDeviceIds, CancellationToken cancellationToken)
@@ -201,7 +223,7 @@ public class TunerHost : ISatIpTunerHost
 
     private static MediaSourceInfo CreateMediaSourceInfo(M3uEntry entry, SatIpDevice device) => new()
     {
-        Id = $"{device.UniqueDeviceName}/{entry.MediaUri.ModulationSystem}/{entry.TvgId}",
+        Id = $"{device.UniqueDeviceName}/{entry.MediaUri.ModulationSystem}/{entry.TvgId}".ToMd5Guid().ToString(),
         Path = entry.MediaUri.ToString(),
         Protocol = entry.MediaUri.MediaProtocol,
         Container = "ts",

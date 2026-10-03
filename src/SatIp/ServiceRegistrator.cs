@@ -9,10 +9,9 @@ public class ServiceRegistrator : IPluginServiceRegistrator
 {
     public void RegisterServices(IServiceCollection serviceCollection, IServerApplicationHost applicationHost)
     {
-        serviceCollection.AddUpnp(o =>
-        {
-            o.DescriptionType = typeof(Upnp.SatIpDescription);
-        });
-        serviceCollection.AddSingleton<ITunerHost, TunerHost>();
+        serviceCollection.AddUpnp();
+
+        serviceCollection.AddSingleton<ISatIpTunerHost, TunerHost>();
+        serviceCollection.AddSingleton<ITunerHost>(sp => sp.GetRequiredService<ISatIpTunerHost>());
     }
 }

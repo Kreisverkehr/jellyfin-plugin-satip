@@ -69,7 +69,7 @@ internal sealed class EitParser
             .Where(entry => entry.Key.ServiceId == serviceId && entry.Key.Start < endDateUtc && entry.Value.End > startDateUtc)
             .Select(entry => new ProgramInfo
             {
-                Id = $"{serviceId:x4}-{entry.Key.EventId:x4}-{entry.Key.Start:O}",
+                Id = $"{serviceId:x4}-{entry.Key.EventId:x4}-{entry.Key.Start.Ticks:x8}",
                 ChannelId = channelId,
                 Name = entry.Value.Name,
                 Overview = entry.Value.Overview,
@@ -84,14 +84,14 @@ internal sealed class EitParser
     {
         if(_matchingServices.Count != 1)
             return;
-            
+
         var requestedServiceId = _matchingServices.Single();
         if(ServiceId != requestedServiceId)
             return;
 
         var programInfo = new ProgramInfo
         {
-            Id = $"{ServiceId:x4}-{EventId:x4}-{Start:O}",
+            Id = $"{ServiceId:x4}-{EventId:x4}-{Start.Ticks:x8}",
             Name = Name,
             Overview = Overview,
             StartDate = Start,

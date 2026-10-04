@@ -1,7 +1,9 @@
+using Kreisverkehr.Jellyfin.Plugin.SatIp.Dvb;
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Controller.LiveTv;
 using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.LiveTv;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace Kreisverkehr.Jellyfin.Plugin.SatIp;
@@ -13,16 +15,18 @@ public class ListingsProvider : ISatIpListingsProvider
     private readonly ILogger<ListingsProvider> _logger;
     private readonly IConfigurationManager _configurationManager;
     private readonly ISatIpTunerHost _tunerHost;
+    private readonly IServiceProvider _serviceProvider;
 
     public string Name => "SAT>IP";
 
     public string Type => "satip";
 
-    public ListingsProvider(ILogger<ListingsProvider> logger, IConfigurationManager configurationManager, ISatIpTunerHost tunerHost)
+    public ListingsProvider(ILogger<ListingsProvider> logger, IConfigurationManager configurationManager, ISatIpTunerHost tunerHost, IServiceProvider serviceProvider)
     {
         _logger = logger;
         _configurationManager = configurationManager;
         _tunerHost = tunerHost;
+        _serviceProvider = serviceProvider;
     }
 
     public Task<List<ChannelInfo>> GetChannels(ListingsProviderInfo info, CancellationToken cancellationToken)
@@ -44,17 +48,9 @@ public class ListingsProvider : ISatIpListingsProvider
 
     public async Task<IEnumerable<ProgramInfo>> GetProgramsAsync(ListingsProviderInfo info, string channelId, DateTime startDateUtc, DateTime endDateUtc, CancellationToken cancellationToken)
     {
-        var mediaSources = await _tunerHost.GetChannelStreamMediaSources(channelId, cancellationToken);
-        var mediaSource = mediaSources.FirstOrDefault();
-
-        if (mediaSource == null)
-        {
-            _logger.LogWarning("No media source found for channel {ChannelId}", channelId);
-            return Enumerable.Empty<ProgramInfo>();
-        }
-
-        // TODO: Implement actual program guide retrieval logic here. For now, we return an empty list.
-        return Enumerable.Empty<ProgramInfo>();
+        var epgScanner = _serviceProvider.GetRequiredKeyedService<IEpgScanner>("dvb");
+        var programs = await epgScanner.ScanAsync(channelId, startDateUtc, endDateUtc, cancellationToken).ToListAsync(cancellationToken).ConfigureAwait(false);
+        return programs;
     }
 
     public Task Validate(ListingsProviderInfo info, bool validateLogin, bool validateListings)

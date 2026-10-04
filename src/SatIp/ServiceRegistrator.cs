@@ -15,5 +15,6 @@ public class ServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<ITunerHost>(sp => sp.GetRequiredService<ISatIpTunerHost>());
         serviceCollection.AddSingleton<ISatIpListingsProvider, ListingsProvider>();
         serviceCollection.AddSingleton<IListingsProvider>(sp => sp.GetRequiredService<ISatIpListingsProvider>());
+        serviceCollection.AddKeyedSingleton<IEpgScanner, Dvb.EpgScanner>("dvb");
     }
 }

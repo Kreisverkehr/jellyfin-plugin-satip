@@ -198,6 +198,7 @@ internal sealed class EitParser
                 return;
 
             var (name, overview) = ReadEventText(section.AsSpan(descriptorStart, descriptorsLength));
+            var (longDescription, items) = ReadExtendedEventText(section.AsSpan(descriptorStart, descriptorsLength));
             _events[(serviceId, eventId, start)] = (name, overview, start + duration);
             RaiseProgramInfoDiscovered(serviceId, eventId, start, name, overview, start + duration);
             offset = descriptorEnd;
@@ -239,6 +240,63 @@ internal sealed class EitParser
         }
 
         return (name, overview);
+    }
+
+    private static (string LongDescription, List<(string ItemDescription, string ItemText)> Items) ReadExtendedEventText(ReadOnlySpan<byte> descriptors)
+    {
+        string longDescription = string.Empty;
+        var items = new List<(string ItemDescription, string ItemText)>();
+
+        for (var offset = 0; offset + 2 <= descriptors.Length;)
+        {
+            var tag = descriptors[offset];
+            var length = descriptors[offset + 1];
+            offset += 2;
+            if (offset + length > descriptors.Length)
+                break;
+
+            if (tag == 0x4e && length >= 6)
+            {
+                var descriptor = descriptors.Slice(offset, length);
+                var itemCount = descriptor[3];
+                var textLengthOffset = 4;
+                for (var i = 0; i < itemCount; i++)
+                {
+                    if (textLengthOffset + 1 > descriptor.Length)
+                        break;
+
+                    var itemDescriptionLength = descriptor[textLengthOffset];
+                    textLengthOffset++;
+                    if (textLengthOffset + itemDescriptionLength + 1 > descriptor.Length)
+                        break;
+
+                    var itemDescription = DecodeDvbText(descriptor.Slice(textLengthOffset, itemDescriptionLength));
+                    textLengthOffset += itemDescriptionLength;
+
+                    var itemTextLength = descriptor[textLengthOffset];
+                    textLengthOffset++;
+                    if (textLengthOffset + itemTextLength > descriptor.Length)
+                        break;
+
+                    var itemText = DecodeDvbText(descriptor.Slice(textLengthOffset, itemTextLength));
+                    textLengthOffset += itemTextLength;
+
+                    items.Add((itemDescription, itemText));
+                }
+
+                if (textLengthOffset + 1 <= descriptor.Length)
+                {
+                    var longDescriptionLength = descriptor[textLengthOffset];
+                    textLengthOffset++;
+                    if (textLengthOffset + longDescriptionLength <= descriptor.Length)
+                        longDescription = DecodeDvbText(descriptor.Slice(textLengthOffset, longDescriptionLength));
+                }
+            }
+
+            offset += length;
+        }
+
+        return (longDescription, items);
     }
 
     private static string DecodeDvbText(ReadOnlySpan<byte> text)

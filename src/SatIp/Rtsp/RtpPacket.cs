@@ -63,15 +63,20 @@ public readonly struct RtpPacket
         if (span.Length < 12)
             return false;
 
+        // The first 2 bits of the first byte represent the version
         var version = (byte)(span[0] >> 6);
         if (version != 2)
             return false;
 
+        // The second nibble of the first byte contains the CSRC count. Use this to calculate the 
+        // start of the actual payload
         var csrcCount = (byte)(span[0] & 0x0f);
         var offset = 12 + csrcCount * 4;
         if (offset > span.Length)
             return false;
 
+        // The fourth bit of the first byte is a flag wether the packet contains extensions or not.
+        // These are written after the CSRC Identifiers. Use this to calculate the start of the actual payload
         var hasExtension = (span[0] & 0x10) != 0;
         if (hasExtension)
         {
@@ -84,7 +89,10 @@ public readonly struct RtpPacket
 
             offset += 4 + extensionLength;
         }
-
+ 
+        // If the third bit of the first byte is set, the packet contains padding. The last byte 
+        // of the packet contains the number of padding bytes. Use this to calculate the end of 
+        // the actual payload
         var hasPadding = (span[0] & 0x20) != 0;
         var end = span.Length;
         if (hasPadding)

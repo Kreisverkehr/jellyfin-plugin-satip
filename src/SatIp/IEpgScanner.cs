@@ -1,4 +1,4 @@
-using MediaBrowser.Controller.LiveTv;
+using Kreisverkehr.Jellyfin.Plugin.SatIp.Dvb;
 
 namespace Kreisverkehr.Jellyfin.Plugin.SatIp;
 

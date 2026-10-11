@@ -46,10 +46,13 @@ public class ListingsProvider : ISatIpListingsProvider
         });
     }
 
-    public async Task<IEnumerable<ProgramInfo>> GetProgramsAsync(ListingsProviderInfo info, string channelId, DateTime startDateUtc, DateTime endDateUtc, CancellationToken cancellationToken)
+    public async Task<IEnumerable<MediaBrowser.Controller.LiveTv.ProgramInfo>> GetProgramsAsync(ListingsProviderInfo info, string channelId, DateTime startDateUtc, DateTime endDateUtc, CancellationToken cancellationToken)
     {
         var epgScanner = _serviceProvider.GetRequiredKeyedService<IEpgScanner>("dvb");
-        var programs = await epgScanner.ScanAsync(channelId, startDateUtc, endDateUtc, cancellationToken).ToListAsync(cancellationToken).ConfigureAwait(false);
+        var programs = await epgScanner.ScanAsync(channelId, startDateUtc, endDateUtc, cancellationToken)
+            .Distinct()
+            .OrderBy(p => p.StartDate)
+            .ToListAsync(cancellationToken);
         return programs;
     }
 

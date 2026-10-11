@@ -31,10 +31,15 @@ Jellyfin's tuner setup currently transfers the selected SAT>IP device into the s
 
 Showing a visible confirmation of the selected device before saving requires changes to Jellyfin Web; the plugin cannot change this built-in setup form on its own.
 
+### EPG Data Limitation
+
+EPG data is currently collected in a 60-second scan for each channel. DVB schedule sections are transmitted in repeating cycles, and a cycle may take longer than the scan, so the program guide can be incomplete. Results are not yet accumulated or shared between channels on the same multiplex.
+
 ### Planned
 
 - Make the plugin available for installation through a Jellyfin plugin repository.
-- Retrieve and integrate EPG data from the SAT>IP server.
+- Collect EIT schedule sections across scans and cache/share the results per multiplex, ideally until the expected sections have been received.
+- Extract channel metadata such as codecs from the transport stream and expose it to Jellyfin so it can identify compatible streams earlier and avoid unnecessary transcoding where possible. This may require changing the channel ID format.
 - Explore a manual channel scan that does not depend on an M3U playlist.
 
 These features are planned and are not available yet.

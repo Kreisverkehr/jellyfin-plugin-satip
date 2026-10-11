@@ -4,6 +4,8 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Channels;
 using System.Web;
+using Cinegy.TsDecoder.Tables;
+using Cinegy.TsDecoder.TransportStream;
 using Kreisverkehr.Jellyfin.Plugin.SatIp.Dvb;
 using Kreisverkehr.Jellyfin.Plugin.SatIp.Rtsp;
 using MediaBrowser.Common.Configuration;
@@ -14,7 +16,7 @@ namespace Kreisverkehr.Jellyfin.Plugin.SatIp.Dvb;
 
 public class EpgScanner : IEpgScanner
 {
-    private static readonly TimeSpan ScanDuration = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan ScanDuration = TimeSpan.FromSeconds(60);
     private readonly ILogger<EpgScanner> _logger;
     private readonly IConfigurationManager _configurationManager;
     private readonly ISatIpTunerHost _tunerHost;
@@ -43,12 +45,13 @@ public class EpgScanner : IEpgScanner
             yield break;
         }
 
+        _logger.LogInformation("Scanning programs for channel {ChannelId}", channelId);
         await foreach (var program in ScanStreamAsync(streamUri, cancellationToken))
         {
-            if(program.StartDate >= startDateUtc && program.StartDate <= endDateUtc)
+            if (program.EndDate >= startDateUtc && program.StartDate <= endDateUtc)
             {
                 program.ChannelId = channelId;
-                _logger.LogInformation("Discovered program {ProgramId} for channel {ChannelId}: {ProgramName} ({ProgramStart} - {ProgramEnd})", program.Id, channelId, program.Name, program.StartDate, program.EndDate);
+                _logger.LogInformation("Discovered program {ProgramId}: {ProgramName} ({ProgramStart} - {ProgramEnd})", program.Id, program.Name, program.StartDate, program.EndDate);
                 yield return program;
             }
         }
@@ -66,30 +69,54 @@ public class EpgScanner : IEpgScanner
         if (requestedPids.Count == 0)
             throw new InvalidOperationException($"The SAT>IP URI does not contain a valid pids parameter. ({streamUri})");
 
-        // Setup EitParser and channel for discovered ProgramInfo
+        // Setup TsDecoder and channel for discovered ProgramInfo
         var programInfoChannel = Channel.CreateUnbounded<ProgramInfo>();
-        var parser = new EitParser(requestedPids);
-        parser.ProgramInfoDiscovered += ProgramInfoDiscoveredHandler;
+        var serviceIds = new HashSet<ushort>();
+        var decoder = new TsDecoder();
+        decoder.TableChangeDetected += TableChangeDetectedHandler;
 
-        _ = RunScanAsync(parser, streamUri, cancellationToken)
+        _ = RunScanAsync(decoder, streamUri, cancellationToken)
             .ContinueWith(_ => Cleanup(), cancellationToken);
 
         while (await programInfoChannel.Reader.WaitToReadAsync(cancellationToken))
             yield return await programInfoChannel.Reader.ReadAsync(cancellationToken);
-        
-        async void ProgramInfoDiscoveredHandler(object? sender, ProgramInfoDiscoveredEventArgs e)
+
+        async void TableChangeDetectedHandler(object? sender, TableChangedEventArgs e)
         {
-            await programInfoChannel.Writer.WriteAsync(e.ProgramInfo, cancellationToken);
+            if (e.TableType == TableType.Pat)
+            {
+                var count = Math.Min(decoder.ProgramAssociationTable.ProgramNumbers.Length, decoder.ProgramAssociationTable.Pids.Length);
+                for (var index = 0; index < count; index++)
+                {
+                    var serviceId = decoder.ProgramAssociationTable.ProgramNumbers[index];
+                    var pmtPid = decoder.ProgramAssociationTable.Pids[index];
+
+                    if (serviceId != 0 && requestedPids.Contains(pmtPid))
+                    {
+                        serviceIds.Add(serviceId);
+                        _logger.LogInformation("Found ServiceId {serviceId} for PMT-PID {pmtPid}", serviceId, pmtPid);
+                    }
+                }
+            }
+
+            if ((e.TableType == TableType.Eit || e.TableType == TableType.EitSchedule) && sender is EventInformationTableFactory tableFactory && tableFactory.LastChangedTable is not null)
+            {
+                var table = tableFactory.LastChangedTable;
+
+                if (serviceIds.Contains(table.ServiceId))
+                    foreach (var item in table.Items)
+                        await programInfoChannel.Writer.WriteAsync(new ProgramInfo(item, table));
+            }
         }
 
         void Cleanup()
         {
-            parser.ProgramInfoDiscovered -= ProgramInfoDiscoveredHandler;
+            decoder.TableChangeDetected -= TableChangeDetectedHandler;
             programInfoChannel.Writer.Complete();
         }
     }
 
-    private async Task RunScanAsync(EitParser parser, Uri streamUri, CancellationToken cancellationToken)
+    private async Task RunScanAsync(TsDecoder decoder, Uri streamUri, CancellationToken cancellationToken)
     {
         using var scanCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         scanCancellation.CancelAfter(ScanDuration);
@@ -101,10 +128,7 @@ public class EpgScanner : IEpgScanner
             while (true)
             {
                 var rtpPacket = await session.ReceiveRtpAsync(scanCancellation.Token).ConfigureAwait(false);
-
-                var payload = rtpPacket.Payload.Span;
-                for (var offset = 0; offset + 188 <= payload.Length; offset += 188)
-                    parser.ProcessTransportPacket(payload.Slice(offset, 188));
+                decoder.AddData(rtpPacket.Payload.ToArray());
             }
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)

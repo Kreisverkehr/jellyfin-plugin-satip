@@ -52,10 +52,10 @@ jobs:
           dotnet build SatIp.slnx \
             --configuration Release \
             --no-restore \
-            -p:Version="${{ steps.version.outputs.value }}"\
+            -p:Version="${{ steps.version.outputs.value }}"
           dotnet publish SatIp.slnx \
             --configuration Release \
-            --no-build
+            --no-build \
             -p:Version="${{ steps.version.outputs.value }}"
 
       - name: Install JPRM

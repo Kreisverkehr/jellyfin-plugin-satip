@@ -17,7 +17,7 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     /// Gets the current plugin instance.
     /// </summary>
     public static Plugin? Instance { get; private set; }
-    public override string Name => "SAT>IP";
+    public override string Name => "SAT>IP Live TV Tuner";
 
     public override string Description => "A SAT>IP server plugin for Jellyfin.";
 

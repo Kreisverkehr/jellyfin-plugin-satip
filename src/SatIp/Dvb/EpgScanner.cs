@@ -7,6 +7,7 @@ using System.Web;
 using Cinegy.TsDecoder.Tables;
 using Cinegy.TsDecoder.TransportStream;
 using Kreisverkehr.Jellyfin.Plugin.SatIp.Dvb;
+using Kreisverkehr.Jellyfin.Plugin.SatIp.Extensions;
 using Kreisverkehr.Jellyfin.Plugin.SatIp.Rtsp;
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Controller.LiveTv;
@@ -35,24 +36,27 @@ public class EpgScanner : IEpgScanner
 
         if (mediaSource == null)
         {
-            _logger.LogWarning("No media source found for channel {ChannelId}", channelId);
+            _logger.LogNoMediaSource(channelId);
             yield break;
         }
 
         if (!Uri.TryCreate(mediaSource.Path, UriKind.Absolute, out var streamUri) || !streamUri.Scheme.Equals("rtsp", StringComparison.OrdinalIgnoreCase))
         {
-            _logger.LogWarning("Channel {ChannelId} does not have a valid RTSP media source", channelId);
+            _logger.LogInvalidRtspMediaSource(channelId);
             yield break;
         }
 
-        _logger.LogInformation("Scanning programs for channel {ChannelId}", channelId);
-        await foreach (var program in ScanStreamAsync(streamUri, cancellationToken))
+        using (_ = _logger.BeginScope("epg scan for channel {channelId} with uri {streamUri}", channelId, streamUri))
         {
-            if (program.EndDate >= startDateUtc && program.StartDate <= endDateUtc)
+            _logger.LogScanningPrograms(channelId);
+            await foreach (var program in ScanStreamAsync(streamUri, cancellationToken))
             {
-                program.ChannelId = channelId;
-                _logger.LogInformation("Discovered program {ProgramId}: {ProgramName} ({ProgramStart} - {ProgramEnd})", program.Id, program.Name, program.StartDate, program.EndDate);
-                yield return program;
+                if (program.EndDate >= startDateUtc && program.StartDate <= endDateUtc)
+                {
+                    program.ChannelId = channelId;
+                    _logger.LogDiscoveredProgram(program.Id, program.Name, program.StartDate, program.EndDate);
+                    yield return program;
+                }
             }
         }
     }
@@ -67,7 +71,10 @@ public class EpgScanner : IEpgScanner
             .Where(pid => pid is >= 0 and <= 0x1fff)
             .ToHashSet() ?? [];
         if (requestedPids.Count == 0)
-            throw new InvalidOperationException($"The SAT>IP URI does not contain a valid pids parameter. ({streamUri})");
+        {
+            _logger.LogInvalidPidsParameter(streamUri);
+            yield break;
+        }
 
         // Setup TsDecoder and channel for discovered ProgramInfo
         var programInfoChannel = Channel.CreateUnbounded<ProgramInfo>();
@@ -94,7 +101,7 @@ public class EpgScanner : IEpgScanner
                     if (serviceId != 0 && requestedPids.Contains(pmtPid))
                     {
                         serviceIds.Add(serviceId);
-                        _logger.LogInformation("Found ServiceId {serviceId} for PMT-PID {pmtPid}", serviceId, pmtPid);
+                        _logger.LogFoundServiceId(serviceId, pmtPid);
                     }
                 }
             }
@@ -105,7 +112,7 @@ public class EpgScanner : IEpgScanner
 
                 if (serviceIds.Contains(table.ServiceId))
                     foreach (var item in table.Items)
-                        await programInfoChannel.Writer.WriteAsync(new ProgramInfo(item, table));
+                        await programInfoChannel.Writer.WriteAsync(new ProgramInfo(item, table, _logger));
             }
         }
 
@@ -124,7 +131,7 @@ public class EpgScanner : IEpgScanner
         RtspSession? session = null;
         try
         {
-            session = await RtspSession.OpenAsync(streamUri, scanCancellation.Token).ConfigureAwait(false);
+            session = await RtspSession.OpenAsync(streamUri, _logger, scanCancellation.Token).ConfigureAwait(false);
             while (true)
             {
                 var rtpPacket = await session.ReceiveRtpAsync(scanCancellation.Token).ConfigureAwait(false);

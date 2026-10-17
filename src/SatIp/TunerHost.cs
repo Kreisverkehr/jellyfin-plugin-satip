@@ -82,7 +82,7 @@ public class TunerHost : ISatIpTunerHost
         var options = _configurationManager.GetLiveTvOptions();
         if(options is null)
         {
-            _logger.LogWarning("Jellyfin Live TV configuration store was not found");
+            _logger.LogMissingLiveTvConfigurationStore();
             return;
         }
 
@@ -106,7 +106,7 @@ public class TunerHost : ISatIpTunerHost
         {
             _cachedDeviceIds = configuredDeviceIds;
             _channelCacheLoaded = true;
-            _logger.LogInformation("No SAT>IP tuner hosts are configured");
+            _logger.LogNoTunerHostsConfigured();
             return;
         }
 
@@ -120,10 +120,16 @@ public class TunerHost : ISatIpTunerHost
             if (_satipDevices.Any(device => string.Equals(device.UniqueDeviceName, serverId, StringComparison.OrdinalIgnoreCase)))
                 continue;
 
-            _logger.LogInformation("SAT>IP server {DeviceId} is not known; searching for its UDN", serverId);
+            _logger.LogUnknownSatIpServer(serverId);
             discoveryTasks.Add(_upnpClient.RunDiscoverDevicesAsync(serverId, waitForResponses: true, cancellationToken: cancellationToken));
         }
         await Task.WhenAll(discoveryTasks);
+
+        foreach (var serverId in configuredServerIds.Where(serverId =>
+            !_satipDevices.Any(device => string.Equals(device.UniqueDeviceName, serverId, StringComparison.OrdinalIgnoreCase))))
+        {
+            _logger.LogSatIpServerDiscoveryFailed(serverId);
+        }
 
         foreach (var device in _satipDevices.Where(d => configuredServerIds.Contains(d.UniqueDeviceName)))
         {
@@ -131,22 +137,30 @@ public class TunerHost : ISatIpTunerHost
 
             if (string.IsNullOrWhiteSpace(device.SatIpM3U))
             {
-                _logger.LogWarning("Device {Device} has no M3U URL", device.UniqueDeviceName);
+                _logger.LogMissingM3uUrl(device.UniqueDeviceName);
                 continue;
             }
 
-            _logger.LogInformation("Loading M3U playlist from {M3UUrl} for device {Device}", device.SatIpM3U, device.UniqueDeviceName);
-            using(var m3uParser = await M3uParser.CreateAsync(new Uri(device.SatIpM3U)))
+            _logger.LogLoadingM3uPlaylist(device.SatIpM3U, device.UniqueDeviceName);
+            try
             {
-                var playlist = m3uParser.Parse();
-                foreach (var entry in playlist.Entries)
+                using (var m3uParser = await M3uParser.CreateAsync(new Uri(device.SatIpM3U)))
                 {
-                    cancellationToken.ThrowIfCancellationRequested();
+                    var playlist = m3uParser.Parse();
+                    foreach (var entry in playlist.Entries)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
 
-                    var channelInfo = CreateChannelInfo(entry, device);
-                    var mediaSourceInfo = CreateMediaSourceInfo(entry, device);
-                    _channels[channelInfo.Id] = (channelInfo, mediaSourceInfo);
+                        var channelInfo = CreateChannelInfo(entry, device);
+                        var mediaSourceInfo = CreateMediaSourceInfo(entry, device);
+                        _channels[channelInfo.Id] = (channelInfo, mediaSourceInfo);
+                    }
                 }
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                _logger.LogM3uPlaylistLoadFailed(exception, device.SatIpM3U, device.UniqueDeviceName);
+                throw;
             }
         }
 
@@ -159,7 +173,7 @@ public class TunerHost : ISatIpTunerHost
         var liveTvOptions = _configurationManager.GetLiveTvOptions();
         if (liveTvOptions is null)
         {
-            _logger.LogWarning("Jellyfin Live TV configuration store was not found");
+            _logger.LogMissingLiveTvConfigurationStore();
             return [];
         }
 

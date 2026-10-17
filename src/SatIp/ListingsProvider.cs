@@ -1,4 +1,5 @@
 using Kreisverkehr.Jellyfin.Plugin.SatIp.Dvb;
+using Kreisverkehr.Jellyfin.Plugin.SatIp.Extensions;
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Controller.LiveTv;
 using MediaBrowser.Model.Dto;
@@ -49,10 +50,12 @@ public class ListingsProvider : ISatIpListingsProvider
     public async Task<IEnumerable<MediaBrowser.Controller.LiveTv.ProgramInfo>> GetProgramsAsync(ListingsProviderInfo info, string channelId, DateTime startDateUtc, DateTime endDateUtc, CancellationToken cancellationToken)
     {
         var epgScanner = _serviceProvider.GetRequiredKeyedService<IEpgScanner>("dvb");
+        _logger?.LogStartEpgScan(channelId);
         var programs = await epgScanner.ScanAsync(channelId, startDateUtc, endDateUtc, cancellationToken)
             .Distinct()
             .OrderBy(p => p.StartDate)
             .ToListAsync(cancellationToken);
+        _logger?.LogEndEpgScan(channelId, programs.Count);
         return programs;
     }
 

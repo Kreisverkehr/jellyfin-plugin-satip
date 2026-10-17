@@ -2,14 +2,16 @@ using System.Diagnostics;
 using System.Text;
 using Cinegy.TsDecoder.Descriptors;
 using Cinegy.TsDecoder.Tables;
+using Kreisverkehr.Jellyfin.Plugin.SatIp.Extensions;
 using Jellyfin.Database.Implementations.Entities.Libraries;
+using Microsoft.Extensions.Logging;
 
 namespace Kreisverkehr.Jellyfin.Plugin.SatIp.Dvb;
 
 [DebuggerDisplay("[{Id}] {Name} {StartDate}")]
 public class ProgramInfo : MediaBrowser.Controller.LiveTv.ProgramInfo, IEquatable<ProgramInfo>
 {
-    public ProgramInfo(EventInformationItem eit, EventInformationTable eventInformationTable)
+    public ProgramInfo(EventInformationItem eit, EventInformationTable eventInformationTable, ILogger? logger = null)
     {
         Id = $"{eit.EventId:x4}-{eventInformationTable.ServiceId:x4}-{eit.StartTime:x10}";
         if (eit.Descriptors.OfType<ShortEventDescriptor>()?.Any() ?? false)
@@ -53,7 +55,10 @@ public class ProgramInfo : MediaBrowser.Controller.LiveTv.ProgramInfo, IEquatabl
             EndDate = StartDate + eit.DurationTimeSpan;
         }
         // If these fail, we just don't set them
-        catch (Exception) { }
+        catch (Exception exception)
+        {
+            logger?.LogInvalidProgramTime(exception, eventInformationTable.ServiceId, eit.EventId);
+        }
 
         Genres ??= [];
         foreach (var contentType in eit.Descriptors.OfType<ContentDescriptor>().SelectMany(d => d.ContentTypes))

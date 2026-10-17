@@ -1,12 +1,15 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using Kreisverkehr.Jellyfin.Plugin.SatIp.Extensions;
+using Microsoft.Extensions.Logging;
 
 namespace Kreisverkehr.Jellyfin.Plugin.SatIp.Rtsp;
     
     public sealed class RtspSession : IAsyncDisposable
     {
         private readonly Uri _uri;
+        private readonly ILogger? _logger;
         private readonly TcpClient _tcpClient;
         private NetworkStream? _controlStream;
         private readonly UdpClient _rtpClient;
@@ -16,19 +19,20 @@ namespace Kreisverkehr.Jellyfin.Plugin.SatIp.Rtsp;
 
         private NetworkStream ControlStream => _controlStream ?? throw new InvalidOperationException("The RTSP connection has not been opened.");
 
-        private RtspSession(Uri uri, TcpClient tcpClient, UdpClient rtpClient, UdpClient rtcpClient)
+        private RtspSession(Uri uri, ILogger? logger, TcpClient tcpClient, UdpClient rtpClient, UdpClient rtcpClient)
         {
             _uri = uri;
+            _logger = logger;
             _tcpClient = tcpClient;
             _rtpClient = rtpClient;
             _rtcpClient = rtcpClient;
         }
 
-        public static async Task<RtspSession> OpenAsync(Uri uri, CancellationToken cancellationToken)
+        public static async Task<RtspSession> OpenAsync(Uri uri, ILogger? logger = null, CancellationToken cancellationToken = default)
         {
             var (rtpClient, rtcpClient) = BindRtpPorts();
             var tcpClient = new TcpClient(AddressFamily.InterNetwork);
-            var session = new RtspSession(uri, tcpClient, rtpClient, rtcpClient);
+            var session = new RtspSession(uri, logger, tcpClient, rtpClient, rtcpClient);
 
             try
             {
@@ -75,14 +79,17 @@ namespace Kreisverkehr.Jellyfin.Plugin.SatIp.Rtsp;
             {
                 try
                 {
+                    _logger?.LogRtspTeardownRequested(_uri);
                     using var teardownTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
-                    await SendRequestAsync("TEARDOWN", new Dictionary<string, string>
+                    var response = await SendRequestAsync("TEARDOWN", new Dictionary<string, string>
                     {
                         ["Session"] = _sessionId,
                     }, teardownTimeout.Token).ConfigureAwait(false);
+                    EnsureSuccess(response, "TEARDOWN");
                 }
-                catch (Exception)
+                catch (Exception exception)
                 {
+                    _logger?.LogRtspTeardownFailed(exception, _uri);
                 }
             }
 

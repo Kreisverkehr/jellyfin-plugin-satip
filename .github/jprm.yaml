@@ -2,7 +2,7 @@
 name: "SAT>IP Live TV Tuner"
 guid: "3ebdc5ac-57aa-4ed0-aedf-122f99a6976f"
 
-version: "0.1.1.0"
+version: "0.1.2.0"
 targetAbi: "12.1.0.0"
 framework: "net10.0"
 
@@ -18,4 +18,4 @@ artifacts:
   - "NetUpnp.dll"
   - "Kreisverkehr.TsDecoder.dll"
 
-changelog: "Fix potential crash on startup when DLNA Plugin is installed."
+changelog: "Fix potential crash while scanning for programs when text could not be decoded properly."

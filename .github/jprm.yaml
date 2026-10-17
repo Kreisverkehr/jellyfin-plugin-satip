@@ -12,10 +12,10 @@ category: "Live TV"
 owner: "Kreisverkehr"
 
 artifacts:
-  - "src/SatIp/bin/Release/net10.0/publish/SatIp.dll"
-  - "src/SatIp/bin/Release/net10.0/publish/SatIp.deps.json"
-  - "src/SatIp/bin/Release/net10.0/publish/NetSsdp.dll"
-  - "src/SatIp/bin/Release/net10.0/publish/NetUpnp.dll"
-  - "src/SatIp/bin/Release/net10.0/publish/Kreisverkehr.TsDecoder.dll"
+  - "SatIp.dll"
+  - "SatIp.deps.json"
+  - "NetSsdp.dll"
+  - "NetUpnp.dll"
+  - "Kreisverkehr.TsDecoder.dll"
 
 changelog: "Initial release."

@@ -1,0 +1,34 @@
+<div id="SatIpConfigurationPage" data-role="page" class="page type-interior pluginConfigurationPage" data-controller="__plugin/satipjs">
+    <div data-role="content">
+        <div class="content-primary">
+            <h1>SAT&gt;IP Tuner Settings</h1>
+            <form class="SatIpConfigurationForm">
+                <div class="inputContainer">
+                    <div class="fieldDescription">Addtional playlists. Enter one URI per line.</div>
+                    <textarea is="emby-textarea" id="txtAdditionalPlaylistUris" label="Additional playlist URIs" rows="5" style="width: 100%; box-sizing: border-box;"></textarea>
+                </div>
+                <div class="inputContainer">
+                    <input is="emby-input" type="number" id="txtEpgScanDurationSeconds" min="1" step="1" required label="EPG scan duration (seconds)" />
+                    <div class="fieldDescription">Time in senconds to listen to each channel while collecting EPG data.</div>
+                </div>
+                <div class="checkboxContainer">
+                    <label>
+                        <input is="emby-checkbox" type="checkbox" id="chkIgnoreServerPlaylist" />
+                        <span>Ignore the playlist provided by the server</span>
+                    </label>
+                </div>
+                <div class="checkboxContainer">
+                    <label>
+                        <input is="emby-checkbox" type="checkbox" id="chkReplacePlaylistHostWithTunerHost" checked/>
+                        <span>Replace the host in additional playlist stream URIs with the discovered tuner's hostname</span>
+                    </label>
+                </div>
+                <div>
+                    <button is="emby-button" type="submit" class="raised button-submit block">
+                        <span>Save</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>

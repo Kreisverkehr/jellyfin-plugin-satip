@@ -23,5 +23,19 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
 
     public override Guid Id => new(ID);
 
-    public IEnumerable<PluginPageInfo> GetPages() => [];
+    public IEnumerable<PluginPageInfo> GetPages() =>
+    [
+        new PluginPageInfo
+        {
+            Name = "satip",
+            EmbeddedResourcePath = "SatIp.Web.settings.html"
+        },
+        new PluginPageInfo
+        {
+            Name = "satipjs",
+            EmbeddedResourcePath = "SatIp.Web.settings.js"
+        }
+    ];
+
+    public static PluginConfiguration GetConfiguration() => Instance?.Configuration ?? new();
 }

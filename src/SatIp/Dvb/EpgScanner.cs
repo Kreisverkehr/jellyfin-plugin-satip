@@ -17,7 +17,6 @@ namespace Kreisverkehr.Jellyfin.Plugin.SatIp.Dvb;
 
 public class EpgScanner : IEpgScanner
 {
-    private static readonly TimeSpan ScanDuration = TimeSpan.FromSeconds(60);
     private readonly ILogger<EpgScanner> _logger;
     private readonly IConfigurationManager _configurationManager;
     private readonly ISatIpTunerHost _tunerHost;
@@ -82,7 +81,8 @@ public class EpgScanner : IEpgScanner
         var decoder = new TsDecoder();
         decoder.TableChangeDetected += TableChangeDetectedHandler;
 
-        _ = RunScanAsync(decoder, streamUri, cancellationToken)
+        var scanDuration = TimeSpan.FromSeconds(Math.Max(1, Plugin.GetConfiguration().EpgScanDurationSeconds));
+        _ = RunScanAsync(decoder, streamUri, scanDuration, cancellationToken)
             .ContinueWith(_ => Cleanup(), cancellationToken);
 
         while (await programInfoChannel.Reader.WaitToReadAsync(cancellationToken))
@@ -123,10 +123,10 @@ public class EpgScanner : IEpgScanner
         }
     }
 
-    private async Task RunScanAsync(TsDecoder decoder, Uri streamUri, CancellationToken cancellationToken)
+    private async Task RunScanAsync(TsDecoder decoder, Uri streamUri, TimeSpan scanDuration, CancellationToken cancellationToken)
     {
         using var scanCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        scanCancellation.CancelAfter(ScanDuration);
+        scanCancellation.CancelAfter(scanDuration);
 
         RtspSession? session = null;
         try

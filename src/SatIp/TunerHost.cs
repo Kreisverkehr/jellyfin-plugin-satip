@@ -80,14 +80,14 @@ public class TunerHost : ISatIpTunerHost
     private void RegisterListingsProvider()
     {
         var options = _configurationManager.GetLiveTvOptions();
-        if(options is null)
+        if (options is null)
         {
             _logger.LogMissingLiveTvConfigurationStore();
             return;
         }
 
-        if(options.ListingProviders?.Any(p => string.Equals(p.Type, "satip", StringComparison.OrdinalIgnoreCase)) ?? false)
-            return; 
+        if (options.ListingProviders?.Any(p => string.Equals(p.Type, "satip", StringComparison.OrdinalIgnoreCase)) ?? false)
+            return;
 
         var listingsMgr = _serviceProvider.GetRequiredService<IListingsManager>();
         listingsMgr.SaveListingProvider(new ListingsProviderInfo
@@ -135,38 +135,62 @@ public class TunerHost : ISatIpTunerHost
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (string.IsNullOrWhiteSpace(device.SatIpM3U))
+            if (string.IsNullOrWhiteSpace(device.SatIpM3U) && Plugin.GetConfiguration().AdditionalPlaylistUris.Count == 0)
             {
                 _logger.LogMissingM3uUrl(device.UniqueDeviceName);
                 continue;
             }
 
-            _logger.LogLoadingM3uPlaylist(device.SatIpM3U, device.UniqueDeviceName);
-            try
-            {
-                using (var m3uParser = await M3uParser.CreateAsync(new Uri(device.SatIpM3U)))
-                {
-                    var playlist = m3uParser.Parse();
-                    foreach (var entry in playlist.Entries)
-                    {
-                        cancellationToken.ThrowIfCancellationRequested();
+            foreach (var playlistLocation in Plugin.GetConfiguration().AdditionalPlaylistUris)
+                await FillChannelCacheFromM3U(playlistLocation, device, GetADeviceAddressOrHostname(device), cancellationToken);
 
-                        var channelInfo = CreateChannelInfo(entry, device);
-                        var mediaSourceInfo = CreateMediaSourceInfo(entry, device);
-                        _channels[channelInfo.Id] = (channelInfo, mediaSourceInfo);
-                    }
-                }
-            }
-            catch (Exception exception) when (exception is not OperationCanceledException)
-            {
-                _logger.LogM3uPlaylistLoadFailed(exception, device.SatIpM3U, device.UniqueDeviceName);
-                throw;
-            }
+            if (!string.IsNullOrWhiteSpace(device.SatIpM3U) && !Plugin.GetConfiguration().IgnoreServerPlaylist)
+                await FillChannelCacheFromM3U(device.SatIpM3U, device, cancellationToken: cancellationToken);
         }
 
         _cachedDeviceIds = configuredDeviceIds;
         _channelCacheLoaded = true;
     }
+
+    private async Task FillChannelCacheFromM3U(string playlistLocation, SatIpDevice device, string? replacementHost = null, CancellationToken cancellationToken = default)
+    {
+        _logger.LogLoadingM3uPlaylist(playlistLocation, device.UniqueDeviceName);
+        try
+        {
+            using (var m3uParser = await M3uParser.CreateAsync(new Uri(playlistLocation)))
+            {
+                var playlist = m3uParser.Parse();
+                foreach (var entry in playlist.Entries)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    if(Plugin.GetConfiguration().ReplacePlaylistHostWithTunerHost && !string.IsNullOrWhiteSpace(replacementHost))
+                        entry.MediaUri = ReplaceHost(entry.MediaUri, replacementHost);
+
+                    var channelInfo = CreateChannelInfo(entry, device);
+                    var mediaSourceInfo = CreateMediaSourceInfo(entry, device);
+                    _channels[channelInfo.Id] = (channelInfo, mediaSourceInfo);
+                }
+            }
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            _logger.LogM3uPlaylistLoadFailed(exception, playlistLocation, device.UniqueDeviceName);
+            throw;
+        }
+
+        Uri ReplaceHost(Uri original, string newHostName) =>
+            new UriBuilder(original.ToString())
+            {
+                Host = newHostName
+            }.Uri;
+    }
+
+    private string? GetADeviceAddressOrHostname(UpnpDevice device) =>
+        _upnpDeviceCollection
+        .Where(d => d.Item2.Device.UniqueDeviceName == device.UniqueDeviceName)
+        .Select(d => d.Item1.Host)
+        .FirstOrDefault();
 
     private HashSet<string> GetConfiguredDeviceIds()
     {

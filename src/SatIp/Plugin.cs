@@ -11,6 +11,8 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     public Plugin(IApplicationPaths applicationPaths, IXmlSerializer xmlSerializer) : base(applicationPaths, xmlSerializer)
     {
         Instance = this;
+        if (!UriParser.IsKnownScheme("rtsp"))
+            UriParser.Register(new GenericUriParser(GenericUriParserOptions.Default), "rtsp", 554);
     }
 
     /// <summary>

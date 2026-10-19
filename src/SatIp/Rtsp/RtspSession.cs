@@ -15,6 +15,9 @@ namespace Kreisverkehr.Jellyfin.Plugin.SatIp.Rtsp;
         private readonly UdpClient _rtpClient;
         private readonly UdpClient _rtcpClient;
         private string? _sessionId;
+        private TimeSpan _keepAliveInterval = TimeSpan.FromSeconds(30);
+        private CancellationTokenSource? _keepAliveCancellation;
+        private Task? _keepAliveTask;
         private int _cseq;
 
         private NetworkStream ControlStream => _controlStream ?? throw new InvalidOperationException("The RTSP connection has not been opened.");
@@ -48,13 +51,14 @@ namespace Kreisverkehr.Jellyfin.Plugin.SatIp.Rtsp;
                 }, cancellationToken).ConfigureAwait(false);
                 EnsureSuccess(setup, "SETUP");
                 if (setup.Headers.TryGetValue("Session", out var sessionHeader))
-                    session._sessionId = sessionHeader.Split(';', 2)[0];
+                    session.InitializeSession(sessionHeader);
 
                 var playHeaders = session._sessionId is null
                     ? null
                     : new Dictionary<string, string> { ["Session"] = session._sessionId };
                 var play = await session.SendRequestAsync("PLAY", playHeaders, cancellationToken).ConfigureAwait(false);
                 EnsureSuccess(play, "PLAY");
+                session.StartKeepAlive();
                 return session;
             }
             catch
@@ -75,6 +79,11 @@ namespace Kreisverkehr.Jellyfin.Plugin.SatIp.Rtsp;
 
         public async ValueTask DisposeAsync()
         {
+            _keepAliveCancellation?.Cancel();
+            if (_keepAliveTask is not null)
+                await _keepAliveTask.ConfigureAwait(false);
+            _keepAliveCancellation?.Dispose();
+
             if (_sessionId is not null && _tcpClient.Connected)
             {
                 try
@@ -96,6 +105,66 @@ namespace Kreisverkehr.Jellyfin.Plugin.SatIp.Rtsp;
             _rtpClient.Dispose();
             _rtcpClient.Dispose();
             _tcpClient.Dispose();
+        }
+
+        private void InitializeSession(string sessionHeader)
+        {
+            var parameters = sessionHeader.Split(';');
+            _sessionId = parameters[0].Trim();
+
+            foreach (var parameter in parameters.Skip(1))
+            {
+                var separator = parameter.IndexOf('=');
+                if (separator <= 0
+                    || !parameter[..separator].Trim().Equals("timeout", StringComparison.OrdinalIgnoreCase)
+                    || !int.TryParse(parameter[(separator + 1)..].Trim(), out var timeoutSeconds)
+                    || timeoutSeconds <= 0)
+                    continue;
+
+                _keepAliveInterval = TimeSpan.FromSeconds(Math.Max(1, timeoutSeconds / 2));
+                break;
+            }
+        }
+
+        private void StartKeepAlive()
+        {
+            if (_sessionId is null)
+                return;
+
+            _keepAliveCancellation = new CancellationTokenSource();
+            _keepAliveTask = KeepAliveAsync(_keepAliveCancellation.Token);
+        }
+
+        private async Task KeepAliveAsync(CancellationToken cancellationToken)
+        {
+            using var timer = new PeriodicTimer(_keepAliveInterval);
+            try
+            {
+                while (await timer.WaitForNextTickAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    try
+                    {
+                        using var requestTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                        requestTimeout.CancelAfter(TimeSpan.FromSeconds(2));
+                        var response = await SendRequestAsync("OPTIONS", new Dictionary<string, string>
+                        {
+                            ["Session"] = _sessionId!,
+                        }, requestTimeout.Token).ConfigureAwait(false);
+                        EnsureSuccess(response, "OPTIONS keep-alive");
+                    }
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                    {
+                        break;
+                    }
+                    catch (Exception exception)
+                    {
+                        _logger?.LogWarning(exception, "SAT>IP RTSP keep-alive to {StreamUri} failed", _uri);
+                    }
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+            }
         }
 
         private async Task<RtspResponse> SendRequestAsync(string method, IReadOnlyDictionary<string, string>? headers, CancellationToken cancellationToken)

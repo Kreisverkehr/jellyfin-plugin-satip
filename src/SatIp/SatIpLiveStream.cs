@@ -1,7 +1,11 @@
 using System.Threading.Channels;
 using Kreisverkehr.Jellyfin.Plugin.SatIp.Rtsp;
+using MediaBrowser.Controller;
 using MediaBrowser.Controller.Library;
+using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.Dto;
+using MediaBrowser.Model.MediaInfo;
+using System.Text.Json;
 
 namespace Kreisverkehr.Jellyfin.Plugin.SatIp;
 
@@ -9,12 +13,12 @@ internal sealed class SatIpLiveStream : ILiveStream
 {
     private const int PAYLOAD_BUFFER_COUNT = 16;
     private readonly IRtspSessionFactory _rtspSessionFactory;
+    private readonly IServerApplicationHost _applicationHost;
     private readonly Uri _streamUri;
-    private readonly Channel<byte[]> _payloads = Channel.CreateBounded<byte[]>(new BoundedChannelOptions(PAYLOAD_BUFFER_COUNT)
+    private readonly Channel<byte[]> _payloads = Channel.CreateUnbounded<byte[]>(new()
     {
-        FullMode = BoundedChannelFullMode.Wait,
         SingleReader = true,
-        SingleWriter = true,
+        SingleWriter = true
     });
     private readonly CancellationTokenSource _receiveCancellation = new();
     private readonly SemaphoreSlim _lifecycleGate = new(1, 1);
@@ -25,17 +29,21 @@ internal sealed class SatIpLiveStream : ILiveStream
     private Task? _closeTask;
     private bool _closed;
 
-    public SatIpLiveStream(IRtspSessionFactory rtspSessionFactory, MediaSourceInfo mediaSource, string tunerHostId, string originalStreamId)
+    public SatIpLiveStream(IRtspSessionFactory rtspSessionFactory, IServerApplicationHost applicationHost, MediaSourceInfo mediaSource, string tunerHostId, string originalStreamId)
     {
         if (!Uri.TryCreate(mediaSource.Path, UriKind.Absolute, out var streamUri))
             throw new ArgumentException("The media source does not contain a valid absolute URI.", nameof(mediaSource));
 
         _streamUri = streamUri;
         _rtspSessionFactory = rtspSessionFactory;
-        MediaSource = mediaSource;
+        _applicationHost = applicationHost;
+        UniqueId = Guid.NewGuid().ToString("N");
         TunerHostId = tunerHostId;
         OriginalStreamId = originalStreamId;
-        UniqueId = Guid.NewGuid().ToString("N");
+        MediaSource = JsonSerializer.Deserialize<MediaSourceInfo>(JsonSerializer.Serialize(mediaSource))
+            ?? throw new InvalidOperationException("The media source could not be copied.");
+        MediaSource.Path = $"{_applicationHost.GetApiUrlForLocalAccess().TrimEnd('/')}/LiveTv/LiveStreamFiles/{UniqueId}/stream.ts";
+        MediaSource.Protocol = MediaProtocol.Http;
         _stream = new RtpPayloadStream(_payloads.Reader);
     }
 

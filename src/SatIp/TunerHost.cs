@@ -166,7 +166,7 @@ public class TunerHost : ISatIpTunerHost
                 {
                     cancellationToken.ThrowIfCancellationRequested();
 
-                    if(Plugin.GetConfiguration().ReplacePlaylistHostWithTunerHost && !string.IsNullOrWhiteSpace(replacementHost))
+                    if (Plugin.GetConfiguration().ReplacePlaylistHostWithTunerHost && !string.IsNullOrWhiteSpace(replacementHost))
                         entry.MediaUri = ReplaceHost(entry.MediaUri, replacementHost);
 
                     var channelInfo = CreateChannelInfo(entry, device);
@@ -216,12 +216,7 @@ public class TunerHost : ISatIpTunerHost
         return separatorIndex < 0 ? deviceId : deviceId[..separatorIndex];
     }
 
-    public Task<ILiveStream> GetChannelStream(string channelId, string streamId, IList<ILiveStream> currentLiveStreams, CancellationToken cancellationToken)
-    {
-        return GetChannelStreamInternal(channelId, streamId, currentLiveStreams, cancellationToken);
-    }
-
-    private async Task<ILiveStream> GetChannelStreamInternal(string channelId, string streamId, IList<ILiveStream> currentLiveStreams, CancellationToken cancellationToken)
+    public async Task<ILiveStream> GetChannelStream(string channelId, string streamId, IList<ILiveStream> currentLiveStreams, CancellationToken cancellationToken)
     {
         await EnsureChannelCacheLoaded(cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
@@ -236,7 +231,13 @@ public class TunerHost : ISatIpTunerHost
             && (string.Equals(liveStream.OriginalStreamId, streamId, StringComparison.OrdinalIgnoreCase)
                 || string.Equals(liveStream.MediaSource.Id, mediaSource.Id, StringComparison.OrdinalIgnoreCase)));
 
-        return sharedStream ?? _liveStreamFactory.Create(mediaSource, channel.TunerHostId, streamId);
+        if (sharedStream is not null)
+            return sharedStream;
+
+        var newStream = _liveStreamFactory.Create(mediaSource, channel.TunerHostId, streamId);
+        await newStream.Open(cancellationToken);
+
+        return newStream;
     }
 
     private async Task EnsureChannelCacheLoaded(CancellationToken cancellationToken)
@@ -290,7 +291,7 @@ public class TunerHost : ISatIpTunerHost
         Path = entry.MediaUri.ToString(),
         Protocol = entry.MediaUri.MediaProtocol,
         Container = "ts",
-        IgnoreDts = true,
+        IgnoreDts = false,
         RequiresOpening = true,
         RequiresClosing = true,
         IsInfiniteStream = true,

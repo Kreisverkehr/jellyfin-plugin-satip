@@ -21,13 +21,15 @@ public class EpgScanner : IEpgScanner
     private readonly IConfigurationManager _configurationManager;
     private readonly ISatIpTunerHost _tunerHost;
     private readonly IProgramInfoFactory _programInfoFactory;
+    private readonly IRtspSessionFactory _rtspSessionFactory;
 
-    public EpgScanner(ILogger<EpgScanner> logger, IConfigurationManager configurationManager, ISatIpTunerHost tunerHost, IProgramInfoFactory programInfoFactory)
+    public EpgScanner(ILogger<EpgScanner> logger, IConfigurationManager configurationManager, ISatIpTunerHost tunerHost, IProgramInfoFactory programInfoFactory, IRtspSessionFactory rtspSessionFactory)
     {
         _logger = logger;
         _configurationManager = configurationManager;
         _tunerHost = tunerHost;
         _programInfoFactory = programInfoFactory;
+        _rtspSessionFactory = rtspSessionFactory;
     }
 
     public async IAsyncEnumerable<ProgramInfo> ScanAsync(string channelId, DateTime startDateUtc, DateTime endDateUtc, [EnumeratorCancellation] CancellationToken cancellationToken)
@@ -133,7 +135,7 @@ public class EpgScanner : IEpgScanner
         RtspSession? session = null;
         try
         {
-            session = await RtspSession.OpenAsync(streamUri, _logger, scanCancellation.Token).ConfigureAwait(false);
+            session = await _rtspSessionFactory.OpenAsync(streamUri, scanCancellation.Token).ConfigureAwait(false);
             while (true)
             {
                 var rtpPacket = await session.ReceiveRtpAsync(scanCancellation.Token).ConfigureAwait(false);

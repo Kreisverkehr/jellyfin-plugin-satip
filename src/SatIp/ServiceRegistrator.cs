@@ -1,4 +1,5 @@
 using Kreisverkehr.Jellyfin.Plugin.SatIp.Dvb;
+using Kreisverkehr.Jellyfin.Plugin.SatIp.Rtsp;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.LiveTv;
 using MediaBrowser.Controller.Plugins;
@@ -17,6 +18,7 @@ public class ServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<ISatIpListingsProvider, ListingsProvider>();
         serviceCollection.AddSingleton<IListingsProvider>(sp => sp.GetRequiredService<ISatIpListingsProvider>());
         serviceCollection.AddSingleton<IProgramInfoFactory, ProgramInfoFactory>();
+        serviceCollection.AddSingleton<IRtspSessionFactory, RtspSessionFactory>();
         serviceCollection.AddKeyedSingleton<IEpgScanner, Dvb.EpgScanner>("dvb");
     }
 }

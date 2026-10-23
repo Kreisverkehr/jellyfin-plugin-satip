@@ -9,7 +9,7 @@ namespace Kreisverkehr.Jellyfin.Plugin.SatIp.Rtsp;
     public sealed class RtspSession : IAsyncDisposable
     {
         private readonly Uri _uri;
-        private readonly ILogger? _logger;
+        private readonly ILogger<RtspSession>? _logger;
         private readonly TcpClient _tcpClient;
         private NetworkStream? _controlStream;
         private readonly UdpClient _rtpClient;
@@ -22,7 +22,7 @@ namespace Kreisverkehr.Jellyfin.Plugin.SatIp.Rtsp;
 
         private NetworkStream ControlStream => _controlStream ?? throw new InvalidOperationException("The RTSP connection has not been opened.");
 
-        private RtspSession(Uri uri, ILogger? logger, TcpClient tcpClient, UdpClient rtpClient, UdpClient rtcpClient)
+        private RtspSession(Uri uri, ILogger<RtspSession>? logger, TcpClient tcpClient, UdpClient rtpClient, UdpClient rtcpClient)
         {
             _uri = uri;
             _logger = logger;
@@ -31,7 +31,7 @@ namespace Kreisverkehr.Jellyfin.Plugin.SatIp.Rtsp;
             _rtcpClient = rtcpClient;
         }
 
-        public static async Task<RtspSession> OpenAsync(Uri uri, ILogger? logger = null, CancellationToken cancellationToken = default)
+        public static async Task<RtspSession> OpenAsync(Uri uri, ILogger<RtspSession>? logger = null, CancellationToken cancellationToken = default)
         {
             var (rtpClient, rtcpClient) = BindRtpPorts();
             var tcpClient = new TcpClient(AddressFamily.InterNetwork);
@@ -205,6 +205,7 @@ namespace Kreisverkehr.Jellyfin.Plugin.SatIp.Rtsp;
                     headers[line[..separator].Trim()] = line[(separator + 1)..].Trim();
             }
 
+            string bodyText = string.Empty;
             if (headers.TryGetValue("Content-Length", out var contentLengthText)
                 && int.TryParse(contentLengthText, out var contentLength)
                 && contentLength > 0)
@@ -218,9 +219,10 @@ namespace Kreisverkehr.Jellyfin.Plugin.SatIp.Rtsp;
                         throw new EndOfStreamException("The SAT>IP server closed the RTSP connection.");
                     remaining -= read;
                 }
+                bodyText = Encoding.ASCII.GetString(bodyBuffer).Trim(' ', '\0');
             }
 
-            return new RtspResponse(statusCode, headers);
+            return new RtspResponse(statusCode, headers, bodyText);
         }
 
         private async Task<string> ReadLineAsync(CancellationToken cancellationToken)
@@ -275,5 +277,5 @@ namespace Kreisverkehr.Jellyfin.Plugin.SatIp.Rtsp;
                 throw new InvalidOperationException($"SAT>IP RTSP {method} failed with status {response.StatusCode}.");
         }
 
-        private sealed record RtspResponse(int StatusCode, Dictionary<string, string> Headers);
+        private sealed record RtspResponse(int StatusCode, Dictionary<string, string> Headers, string BodyText);
     }

@@ -20,12 +20,14 @@ public class EpgScanner : IEpgScanner
     private readonly ILogger<EpgScanner> _logger;
     private readonly IConfigurationManager _configurationManager;
     private readonly ISatIpTunerHost _tunerHost;
+    private readonly IProgramInfoFactory _programInfoFactory;
 
-    public EpgScanner(ILogger<EpgScanner> logger, IConfigurationManager configurationManager, ISatIpTunerHost tunerHost)
+    public EpgScanner(ILogger<EpgScanner> logger, IConfigurationManager configurationManager, ISatIpTunerHost tunerHost, IProgramInfoFactory programInfoFactory)
     {
         _logger = logger;
         _configurationManager = configurationManager;
         _tunerHost = tunerHost;
+        _programInfoFactory = programInfoFactory;
     }
 
     public async IAsyncEnumerable<ProgramInfo> ScanAsync(string channelId, DateTime startDateUtc, DateTime endDateUtc, [EnumeratorCancellation] CancellationToken cancellationToken)
@@ -111,8 +113,8 @@ public class EpgScanner : IEpgScanner
                 var table = tableFactory.LastChangedTable;
 
                 if (serviceIds.Contains(table.ServiceId))
-                    foreach (var item in table.Items)
-                        await programInfoChannel.Writer.WriteAsync(new ProgramInfo(item, table, _logger));
+                    await foreach (var item in _programInfoFactory.GetProgramInfoFromEit(table))
+                        await programInfoChannel.Writer.WriteAsync(item);
             }
         }
 

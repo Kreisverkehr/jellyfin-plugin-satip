@@ -30,6 +30,7 @@ public class TunerHost : ISatIpTunerHost
     private readonly IEnumerable<SatIpDevice> _satipDevices;
     private readonly IEnumerable<TunerHostInfo> _tunerHostInfos;
     private readonly IUpnpClient _upnpClient;
+    private readonly ISatIpLiveStreamFactory _liveStreamFactory;
     private readonly ConcurrentDictionary<string, (ChannelInfo, MediaSourceInfo)> _channels = new(StringComparer.OrdinalIgnoreCase);
     private HashSet<string> _cachedDeviceIds = new(StringComparer.OrdinalIgnoreCase);
     private bool _channelCacheLoaded;
@@ -40,11 +41,12 @@ public class TunerHost : ISatIpTunerHost
 
     public bool IsSupported => true;
 
-    public TunerHost(ILogger<TunerHost> logger, IConfigurationManager configurationManager, IUpnpDeviceCollection<SatIpDescription> upnpDeviceCollection, IUpnpClient upnpClient, IServiceProvider serviceProvider)
+    public TunerHost(ILogger<TunerHost> logger, IConfigurationManager configurationManager, IUpnpDeviceCollection<SatIpDescription> upnpDeviceCollection, IUpnpClient upnpClient, IServiceProvider serviceProvider, ISatIpLiveStreamFactory liveStreamFactory)
     {
         _logger = logger;
         _configurationManager = configurationManager;
         _upnpClient = upnpClient;
+        _liveStreamFactory = liveStreamFactory;
         _upnpDeviceCollection = upnpDeviceCollection;
         _serviceProvider = serviceProvider;
         _satipDevices = _upnpDeviceCollection
@@ -216,14 +218,37 @@ public class TunerHost : ISatIpTunerHost
 
     public Task<ILiveStream> GetChannelStream(string channelId, string streamId, IList<ILiveStream> currentLiveStreams, CancellationToken cancellationToken)
     {
-        throw new NotImplementedException("SAT>IP media sources are played directly without opening an ILiveStream.");
+        return GetChannelStreamInternal(channelId, streamId, currentLiveStreams, cancellationToken);
     }
 
-    public async Task<List<MediaSourceInfo>> GetChannelStreamMediaSources(string channelId, CancellationToken cancellationToken)
+    private async Task<ILiveStream> GetChannelStreamInternal(string channelId, string streamId, IList<ILiveStream> currentLiveStreams, CancellationToken cancellationToken)
+    {
+        await EnsureChannelCacheLoaded(cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (!_channels.TryGetValue(channelId, out var channelTuple))
+            throw new ArgumentException($"Channel '{channelId}' was not found.", nameof(channelId));
+
+        var (channel, mediaSource) = channelTuple;
+        var sharedStream = currentLiveStreams.FirstOrDefault(liveStream =>
+            liveStream.EnableStreamSharing
+            && string.Equals(liveStream.TunerHostId, channel.TunerHostId, StringComparison.OrdinalIgnoreCase)
+            && (string.Equals(liveStream.OriginalStreamId, streamId, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(liveStream.MediaSource.Id, mediaSource.Id, StringComparison.OrdinalIgnoreCase)));
+
+        return sharedStream ?? _liveStreamFactory.Create(mediaSource, channel.TunerHostId, streamId);
+    }
+
+    private async Task EnsureChannelCacheLoaded(CancellationToken cancellationToken)
     {
         var configuredDeviceIds = GetConfiguredDeviceIds();
         if (!_channelCacheLoaded || !_cachedDeviceIds.SetEquals(configuredDeviceIds))
             await FillChannelCache(configuredDeviceIds, cancellationToken);
+    }
+
+    public async Task<List<MediaSourceInfo>> GetChannelStreamMediaSources(string channelId, CancellationToken cancellationToken)
+    {
+        await EnsureChannelCacheLoaded(cancellationToken);
 
         return _channels.TryGetValue(channelId, out var channelTuple)
             ? [channelTuple.Item2]
@@ -266,8 +291,8 @@ public class TunerHost : ISatIpTunerHost
         Protocol = entry.MediaUri.MediaProtocol,
         Container = "ts",
         IgnoreDts = true,
-        RequiresOpening = false,
-        RequiresClosing = false,
+        RequiresOpening = true,
+        RequiresClosing = true,
         IsInfiniteStream = true,
         AnalyzeDurationMs = 3000,
         SupportsProbing = false,

@@ -1,6 +1,6 @@
 using Kreisverkehr.Jellyfin.Plugin.SatIp.Dvb;
 
-namespace Kreisverkehr.Jellyfin.Plugin.SatIp;
+namespace Kreisverkehr.Jellyfin.Plugin.SatIp.Dvb;
 
 public interface IEpgScanner
 {

@@ -6,6 +6,8 @@ using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.MediaInfo;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
+using Kreisverkehr.Jellyfin.Plugin.SatIp.Extensions;
 
 namespace Kreisverkehr.Jellyfin.Plugin.SatIp;
 
@@ -14,6 +16,7 @@ internal sealed class SatIpLiveStream : ILiveStream
     private const int PAYLOAD_BUFFER_COUNT = 16;
     private readonly IRtspSessionFactory _rtspSessionFactory;
     private readonly IServerApplicationHost _applicationHost;
+    private readonly ILogger<SatIpLiveStream> _logger;
     private readonly Uri _streamUri;
     private readonly Channel<byte[]> _payloads = Channel.CreateUnbounded<byte[]>(new()
     {
@@ -29,7 +32,7 @@ internal sealed class SatIpLiveStream : ILiveStream
     private Task? _closeTask;
     private bool _closed;
 
-    public SatIpLiveStream(IRtspSessionFactory rtspSessionFactory, IServerApplicationHost applicationHost, MediaSourceInfo mediaSource, string tunerHostId, string originalStreamId)
+    public SatIpLiveStream(IRtspSessionFactory rtspSessionFactory, IServerApplicationHost applicationHost, ILogger<SatIpLiveStream> logger, MediaSourceInfo mediaSource, string tunerHostId, string originalStreamId)
     {
         if (!Uri.TryCreate(mediaSource.Path, UriKind.Absolute, out var streamUri))
             throw new ArgumentException("The media source does not contain a valid absolute URI.", nameof(mediaSource));
@@ -37,6 +40,7 @@ internal sealed class SatIpLiveStream : ILiveStream
         _streamUri = streamUri;
         _rtspSessionFactory = rtspSessionFactory;
         _applicationHost = applicationHost;
+        _logger = logger;
         UniqueId = Guid.NewGuid().ToString("N");
         TunerHostId = tunerHostId;
         OriginalStreamId = originalStreamId;
@@ -61,6 +65,7 @@ internal sealed class SatIpLiveStream : ILiveStream
 
     public async Task Open(CancellationToken openCancellationToken)
     {
+        _logger.LogEnterMethod();
         await _lifecycleGate.WaitAsync(openCancellationToken).ConfigureAwait(false);
         try
         {
@@ -75,12 +80,14 @@ internal sealed class SatIpLiveStream : ILiveStream
         {
             _lifecycleGate.Release();
         }
+        _logger.LogExitMethod();
     }
 
     public Stream GetStream() => _stream;
 
     public Task Close()
     {
+        _logger.LogEnterMethod();
         lock (_closeLock)
             return _closeTask ??= CloseCoreAsync();
     }
@@ -89,6 +96,7 @@ internal sealed class SatIpLiveStream : ILiveStream
 
     private async Task ReceivePayloadsAsync(RtspSession session, CancellationToken cancellationToken)
     {
+        _logger.LogEnterMethod();
         Exception? failure = null;
         try
         {
@@ -109,10 +117,12 @@ internal sealed class SatIpLiveStream : ILiveStream
         {
             _payloads.Writer.TryComplete(failure);
         }
+        _logger.LogExitMethod();
     }
 
     private async Task CloseCoreAsync()
     {
+        _logger.LogEnterMethod();
         await _lifecycleGate.WaitAsync().ConfigureAwait(false);
         RtspSession? session;
         Task? receiveTask;
@@ -142,6 +152,7 @@ internal sealed class SatIpLiveStream : ILiveStream
             _payloads.Writer.TryComplete();
             _receiveCancellation.Dispose();
         }
+        _logger.LogExitMethod();
     }
 
     private sealed class RtpPayloadStream : Stream

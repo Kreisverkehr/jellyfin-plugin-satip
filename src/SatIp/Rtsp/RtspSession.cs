@@ -33,6 +33,7 @@ namespace Kreisverkehr.Jellyfin.Plugin.SatIp.Rtsp;
 
         public static async Task<RtspSession> OpenAsync(Uri uri, ILogger<RtspSession>? logger = null, CancellationToken cancellationToken = default)
         {
+            logger?.LogEnterMethod();
             var (rtpClient, rtcpClient) = BindRtpPorts();
             var tcpClient = new TcpClient(AddressFamily.InterNetwork);
             var session = new RtspSession(uri, logger, tcpClient, rtpClient, rtcpClient);
@@ -59,6 +60,7 @@ namespace Kreisverkehr.Jellyfin.Plugin.SatIp.Rtsp;
                 var play = await session.SendRequestAsync("PLAY", playHeaders, cancellationToken).ConfigureAwait(false);
                 EnsureSuccess(play, "PLAY");
                 session.StartKeepAlive();
+                logger?.LogExitMethod();
                 return session;
             }
             catch
@@ -169,6 +171,8 @@ namespace Kreisverkehr.Jellyfin.Plugin.SatIp.Rtsp;
 
         private async Task<RtspResponse> SendRequestAsync(string method, IReadOnlyDictionary<string, string>? headers, CancellationToken cancellationToken)
         {
+            _logger?.LogEnterMethod();
+            _logger?.LogRtspCommand(method);
             var request = new StringBuilder()
                 .Append(method).Append(' ').Append(_uri.AbsoluteUri).Append(" RTSP/1.0\r\n")
                 .Append("CSeq: ").Append(++_cseq).Append("\r\n")
@@ -181,17 +185,24 @@ namespace Kreisverkehr.Jellyfin.Plugin.SatIp.Rtsp;
             }
 
             request.Append("\r\n");
-            var bytes = Encoding.ASCII.GetBytes(request.ToString());
+            var requestText = request.ToString();
+            _logger?.LogRtspCommandText(requestText);
+            var bytes = Encoding.ASCII.GetBytes(requestText);
             await ControlStream.WriteAsync(bytes, cancellationToken).ConfigureAwait(false);
-            return await ReadResponseAsync(cancellationToken).ConfigureAwait(false);
+
+            var response = await ReadResponseAsync(cancellationToken).ConfigureAwait(false);
+            _logger?.LogExitMethod();
+            return response;
         }
 
         private async Task<RtspResponse> ReadResponseAsync(CancellationToken cancellationToken)
         {
+            _logger?.LogEnterMethod();
             var statusLine = await ReadLineAsync(cancellationToken).ConfigureAwait(false);
             var statusParts = statusLine.Split(' ', 3);
             if (statusParts.Length < 2 || !int.TryParse(statusParts[1], out var statusCode))
                 throw new InvalidDataException("The SAT>IP server returned an invalid RTSP status line.");
+            _logger?.LogRtspCommandResponse(statusCode);
 
             var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             while (true)
@@ -199,7 +210,8 @@ namespace Kreisverkehr.Jellyfin.Plugin.SatIp.Rtsp;
                 var line = await ReadLineAsync(cancellationToken).ConfigureAwait(false);
                 if (line.Length == 0)
                     break;
-
+                
+                _logger?.LogRtspCommandResponseHeader(line);
                 var separator = line.IndexOf(':');
                 if (separator > 0)
                     headers[line[..separator].Trim()] = line[(separator + 1)..].Trim();
@@ -220,8 +232,10 @@ namespace Kreisverkehr.Jellyfin.Plugin.SatIp.Rtsp;
                     remaining -= read;
                 }
                 bodyText = Encoding.ASCII.GetString(bodyBuffer).Trim(' ', '\0');
+                _logger?.LogRtspCommandResponseBody(bodyText);
             }
 
+            _logger?.LogExitMethod();
             return new RtspResponse(statusCode, headers, bodyText);
         }
 

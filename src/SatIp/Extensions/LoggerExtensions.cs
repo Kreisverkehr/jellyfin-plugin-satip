@@ -1,9 +1,26 @@
+using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Logging;
 
 namespace Kreisverkehr.Jellyfin.Plugin.SatIp.Extensions;
 
 internal static partial class LoggerExtensions
 {
+    [LoggerMessage(
+        EventId = 10,
+        EventName = "Enter Method",
+        Level = LogLevel.Trace,
+        Message = "[ENTER] {method}"
+    )]
+    internal static partial void LogEnterMethod(this ILogger logger, [CallerMemberName] string method = "");
+
+    [LoggerMessage(
+        EventId = 10,
+        EventName = "Exit Method",
+        Level = LogLevel.Trace,
+        Message = "[EXIT] {method}"
+    )]
+    internal static partial void LogExitMethod(this ILogger logger, [CallerMemberName] string method = "");
+
     [LoggerMessage(
         EventId = 1000,
         EventName = "SAT>IP EPG scan started",
@@ -133,6 +150,30 @@ internal static partial class LoggerExtensions
     internal static partial void LogM3uPlaylistLoadFailed(this ILogger logger, Exception exception, string m3uUrl, string device);
 
     [LoggerMessage(
+        EventId = 2080,
+        EventName = "SAT>IP getting channel stream",
+        Level = LogLevel.Information,
+        Message = "Getting channel stream for channel {channelId} with streamId {streamId}"
+        )]
+    internal static partial void LogGetChannelStream(this ILogger logger, string channelId, string streamId);
+
+    [LoggerMessage(
+        EventId = 2090,
+        EventName = "SAT>IP returning shared stream",
+        Level = LogLevel.Information,
+        Message = "Found an already running stream for channel {channelId} with streamId {streamId}"
+        )]
+    internal static partial void LogReturningSharedStream(this ILogger logger, string channelId, string streamId);
+
+    [LoggerMessage(
+        EventId = 2091,
+        EventName = "SAT>IP returning new stream",
+        Level = LogLevel.Information,
+        Message = "Created a new stream for channel {channelId} with streamId {streamId}"
+        )]
+    internal static partial void LogReturningNewStream(this ILogger logger, string channelId, string streamId);
+
+    [LoggerMessage(
         EventId = 3010,
         EventName = "SAT>IP RTSP TEARDOWN requested",
         Level = LogLevel.Debug,
@@ -147,4 +188,44 @@ internal static partial class LoggerExtensions
         Message = "RTSP TEARDOWN to {StreamUri} failed"
         )]
     internal static partial void LogRtspTeardownFailed(this ILogger logger, Exception exception, Uri streamUri);
+
+    [LoggerMessage(
+        EventId = 3030,
+        EventName = "SAT>IP RTSP Command sent",
+        Level = LogLevel.Debug,
+        Message = "Sending RTSP command {method} to server"
+        )]
+    internal static partial void LogRtspCommand(this ILogger logger, string method);
+
+    [LoggerMessage(
+        EventId = 3031,
+        EventName = "SAT>IP RTSP Command text",
+        Level = LogLevel.Trace,
+        Message = "RTSP command text: \r\n{commandText}"
+        )]
+    internal static partial void LogRtspCommandText(this ILogger logger, string commandText);
+
+    [LoggerMessage(
+        EventId = 3040,
+        EventName = "SAT>IP RTSP Command response received",
+        Level = LogLevel.Debug,
+        Message = "Got RTSP response with status {statusCode}"
+        )]
+    internal static partial void LogRtspCommandResponse(this ILogger logger, int statusCode);
+
+    [LoggerMessage(
+        EventId = 3041,
+        EventName = "SAT>IP RTSP Command response header",
+        Level = LogLevel.Debug,
+        Message = "RTSP response header {headerLine}"
+        )]
+    internal static partial void LogRtspCommandResponseHeader(this ILogger logger, string headerLine);
+
+    [LoggerMessage(
+        EventId = 3042,
+        EventName = "SAT>IP RTSP Command response body",
+        Level = LogLevel.Trace,
+        Message = "RTSP response body: \r\n{responseBody}"
+        )]
+    internal static partial void LogRtspCommandResponseBody(this ILogger logger, string responseBody);
 }

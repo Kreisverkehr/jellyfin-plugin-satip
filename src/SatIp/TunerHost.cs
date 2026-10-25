@@ -62,13 +62,15 @@ public class TunerHost : ISatIpTunerHost
 
     public async Task<List<TunerHostInfo>> DiscoverDevices(int discoveryDurationMs, CancellationToken cancellationToken)
     {
+        _logger.LogEnterMethod();
         await _upnpClient.RunDiscoverDevicesAsync(SATIP_DEVICE_TYPE, discoveryDurationMs / 1000, waitForResponses: true, cancellationToken);
-
+        _logger.LogExitMethod();
         return _tunerHostInfos.ToList();
     }
 
     public async Task<List<ChannelInfo>> GetChannels(bool enableCache, CancellationToken cancellationToken)
     {
+        _logger.LogEnterMethod();
         RegisterListingsProvider();
         var configuredDeviceIds = GetConfiguredDeviceIds();
         if (!enableCache || !_channelCacheLoaded || !_cachedDeviceIds.SetEquals(configuredDeviceIds))
@@ -76,11 +78,13 @@ public class TunerHost : ISatIpTunerHost
             await FillChannelCache(configuredDeviceIds, cancellationToken);
         }
 
+        _logger.LogExitMethod();
         return _channels.Values.Select(t => t.Item1).ToList();
     }
 
     private void RegisterListingsProvider()
     {
+        _logger.LogEnterMethod();
         var options = _configurationManager.GetLiveTvOptions();
         if (options is null)
         {
@@ -98,10 +102,12 @@ public class TunerHost : ISatIpTunerHost
             EnableAllTuners = false,
             EnabledTuners = GetConfiguredDeviceIds().ToArray(),
         }, false, false);
+        _logger.LogExitMethod();
     }
 
     private async Task FillChannelCache(HashSet<string> configuredDeviceIds, CancellationToken cancellationToken)
     {
+        _logger.LogEnterMethod();
         _channelCacheLoaded = false;
 
         if (configuredDeviceIds.Count == 0)
@@ -152,10 +158,12 @@ public class TunerHost : ISatIpTunerHost
 
         _cachedDeviceIds = configuredDeviceIds;
         _channelCacheLoaded = true;
+        _logger.LogExitMethod();
     }
 
     private async Task FillChannelCacheFromM3U(string playlistLocation, SatIpDevice device, string? replacementHost = null, CancellationToken cancellationToken = default)
     {
+        _logger.LogEnterMethod();
         _logger.LogLoadingM3uPlaylist(playlistLocation, device.UniqueDeviceName);
         try
         {
@@ -186,6 +194,7 @@ public class TunerHost : ISatIpTunerHost
             {
                 Host = newHostName
             }.Uri;
+        _logger.LogExitMethod();
     }
 
     private string? GetADeviceAddressOrHostname(UpnpDevice device) =>
@@ -196,6 +205,7 @@ public class TunerHost : ISatIpTunerHost
 
     private HashSet<string> GetConfiguredDeviceIds()
     {
+        _logger.LogEnterMethod();
         var liveTvOptions = _configurationManager.GetLiveTvOptions();
         if (liveTvOptions is null)
         {
@@ -203,6 +213,7 @@ public class TunerHost : ISatIpTunerHost
             return [];
         }
 
+        _logger.LogExitMethod();
         return liveTvOptions?.TunerHosts?
             .Where(t => string.Equals(t.Type, SATIP_TUNER_HOST_TYPE, StringComparison.OrdinalIgnoreCase))
             .Select(t => t.DeviceId)
@@ -218,9 +229,11 @@ public class TunerHost : ISatIpTunerHost
 
     public async Task<ILiveStream> GetChannelStream(string channelId, string streamId, IList<ILiveStream> currentLiveStreams, CancellationToken cancellationToken)
     {
+        _logger.LogEnterMethod();
         await EnsureChannelCacheLoaded(cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
 
+        _logger.LogGetChannelStream(channelId, streamId);
         if (!_channels.TryGetValue(channelId, out var channelTuple))
             throw new ArgumentException($"Channel '{channelId}' was not found.", nameof(channelId));
 
@@ -232,19 +245,26 @@ public class TunerHost : ISatIpTunerHost
                 || string.Equals(liveStream.MediaSource.Id, mediaSource.Id, StringComparison.OrdinalIgnoreCase)));
 
         if (sharedStream is not null)
+        {
+            _logger.LogReturningSharedStream(channelId, sharedStream.UniqueId);
             return sharedStream;
+        }
 
         var newStream = _liveStreamFactory.Create(mediaSource, channel.TunerHostId, streamId);
+        _logger.LogReturningNewStream(channelId, newStream.UniqueId);
         await newStream.Open(cancellationToken);
 
+        _logger.LogExitMethod();
         return newStream;
     }
 
     private async Task EnsureChannelCacheLoaded(CancellationToken cancellationToken)
     {
+        _logger.LogEnterMethod();
         var configuredDeviceIds = GetConfiguredDeviceIds();
         if (!_channelCacheLoaded || !_cachedDeviceIds.SetEquals(configuredDeviceIds))
             await FillChannelCache(configuredDeviceIds, cancellationToken);
+        _logger.LogExitMethod();
     }
 
     public async Task<List<MediaSourceInfo>> GetChannelStreamMediaSources(string channelId, CancellationToken cancellationToken)

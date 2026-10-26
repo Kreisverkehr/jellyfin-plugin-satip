@@ -8,6 +8,7 @@ using MediaBrowser.Model.MediaInfo;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Kreisverkehr.Jellyfin.Plugin.SatIp.Extensions;
+using System.Diagnostics;
 
 namespace Kreisverkehr.Jellyfin.Plugin.SatIp;
 
@@ -32,7 +33,7 @@ internal sealed class SatIpLiveStream : ILiveStream
     private Task? _closeTask;
     private bool _closed;
 
-    public SatIpLiveStream(IRtspSessionFactory rtspSessionFactory, IServerApplicationHost applicationHost, ILogger<SatIpLiveStream> logger, MediaSourceInfo mediaSource, string tunerHostId, string originalStreamId)
+    public SatIpLiveStream(IRtspSessionFactory rtspSessionFactory, IServerApplicationHost applicationHost, ILogger<SatIpLiveStream> logger, ILogger<RtpPayloadStream> streamLogger, MediaSourceInfo mediaSource, string tunerHostId, string originalStreamId)
     {
         if (!Uri.TryCreate(mediaSource.Path, UriKind.Absolute, out var streamUri))
             throw new ArgumentException("The media source does not contain a valid absolute URI.", nameof(mediaSource));
@@ -48,7 +49,8 @@ internal sealed class SatIpLiveStream : ILiveStream
             ?? throw new InvalidOperationException("The media source could not be copied.");
         MediaSource.Path = $"{_applicationHost.GetApiUrlForLocalAccess().TrimEnd('/')}/LiveTv/LiveStreamFiles/{UniqueId}/stream.ts";
         MediaSource.Protocol = MediaProtocol.Http;
-        _stream = new RtpPayloadStream(_payloads.Reader);
+        _stream = new RtpPayloadStream(_payloads.Reader, streamLogger);
+        _logger.LogSatIpLiveStreamCreated(_streamUri, MediaSource.Path);
     }
 
     public int ConsumerCount { get; set; }
@@ -75,6 +77,7 @@ internal sealed class SatIpLiveStream : ILiveStream
 
             _session = await _rtspSessionFactory.OpenAsync(_streamUri, openCancellationToken).ConfigureAwait(false);
             _receiveTask = ReceivePayloadsAsync(_session, _receiveCancellation.Token);
+            _logger.LogSatIpLiveStreamOpened(_streamUri);
         }
         finally
         {
@@ -112,6 +115,7 @@ internal sealed class SatIpLiveStream : ILiveStream
         catch (Exception exception)
         {
             failure = exception;
+            _logger.LogSatIpLiveStreamFailure(exception);
         }
         finally
         {
@@ -155,16 +159,19 @@ internal sealed class SatIpLiveStream : ILiveStream
         _logger.LogExitMethod();
     }
 
-    private sealed class RtpPayloadStream : Stream
+    internal sealed class RtpPayloadStream : Stream
     {
         private readonly ChannelReader<byte[]> _reader;
+        private readonly ILogger<RtpPayloadStream> _logger;
         private byte[]? _currentPayload;
         private int _currentOffset;
         private bool _disposed;
 
-        public RtpPayloadStream(ChannelReader<byte[]> reader)
+        public RtpPayloadStream(ChannelReader<byte[]> reader, ILogger<RtpPayloadStream> logger)
         {
             _reader = reader;
+            _logger = logger;
+            _logger.LogSatIpPayloadStreamCreated();
         }
 
         public override bool CanRead => !_disposed;
@@ -189,6 +196,7 @@ internal sealed class SatIpLiveStream : ILiveStream
 
         public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
         {
+            _logger.LogEnterMethod();
             ObjectDisposedException.ThrowIf(_disposed, this);
             if (buffer.Length == 0)
                 return 0;
@@ -207,6 +215,7 @@ internal sealed class SatIpLiveStream : ILiveStream
             var bytesToCopy = Math.Min(buffer.Length, _currentPayload.Length - _currentOffset);
             _currentPayload.AsMemory(_currentOffset, bytesToCopy).CopyTo(buffer);
             _currentOffset += bytesToCopy;
+            _logger.LogExitMethod();
             return bytesToCopy;
         }
 
@@ -222,8 +231,17 @@ internal sealed class SatIpLiveStream : ILiveStream
 
         protected override void Dispose(bool disposing)
         {
+            _logger.LogEnterMethod();
+
+            if(_logger.IsEnabled(LogLevel.Debug))
+            {
+                var stacktrace = new StackTrace(fNeedFileInfo: true);
+                _logger.LogSatIpPayloadStreamDisposed(stacktrace.ToString());
+            }
+
             _disposed = true;
             base.Dispose(disposing);
+            _logger.LogExitMethod();
         }
     }
 }

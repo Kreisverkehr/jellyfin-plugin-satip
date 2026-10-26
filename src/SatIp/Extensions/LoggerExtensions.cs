@@ -228,4 +228,44 @@ internal static partial class LoggerExtensions
         Message = "RTSP response body: \r\n{responseBody}"
         )]
     internal static partial void LogRtspCommandResponseBody(this ILogger logger, string responseBody);
+
+    [LoggerMessage(
+        EventId = 4000,
+        EventName = "SAT>IP LiveStream created",
+        Level = LogLevel.Information,
+        Message = "SAT>IP LiveStream created. Streaming {streamUri} at {mediaSourcePath}"
+        )]
+    internal static partial void LogSatIpLiveStreamCreated(this ILogger logger, Uri streamUri, string mediaSourcePath);
+
+    [LoggerMessage(
+        EventId = 4010,
+        EventName = "SAT>IP LiveStream opened",
+        Level = LogLevel.Information,
+        Message = "SAT>IP LiveStream opened for {streamUri}"
+        )]
+    internal static partial void LogSatIpLiveStreamOpened(this ILogger logger, Uri streamUri);
+
+    [LoggerMessage(
+        EventId = 4020,
+        EventName = "SAT>IP LiveStream failure",
+        Level = LogLevel.Warning,
+        Message = "Failure while receiving SAT>IP livestream data"
+        )]
+    internal static partial void LogSatIpLiveStreamFailure(this ILogger logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 4030,
+        EventName = "SAT>IP TsPayloadStream created",
+        Level = LogLevel.Debug,
+        Message = "Created stream for ts payload"
+        )]
+    internal static partial void LogSatIpPayloadStreamCreated(this ILogger logger);
+
+    [LoggerMessage(
+        EventId = 4030,
+        EventName = "SAT>IP TsPayloadStream disposed",
+        Level = LogLevel.Debug,
+        Message = "Stream for ts payload was disposed. Stacktrace: {stacktrace}"
+        )]
+    internal static partial void LogSatIpPayloadStreamDisposed(this ILogger logger, string stacktrace);
 }

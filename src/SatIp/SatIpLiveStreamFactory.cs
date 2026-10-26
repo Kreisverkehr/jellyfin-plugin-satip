@@ -25,5 +25,5 @@ public sealed class SatIpLiveStreamFactory : ISatIpLiveStreamFactory
     }
 
     public ILiveStream Create(MediaSourceInfo mediaSource, string tunerHostId, string originalStreamId) =>
-        new SatIpLiveStream(_rtspSessionFactory, _applicationHost, _loggerFactory.CreateLogger<SatIpLiveStream>(), mediaSource, tunerHostId, originalStreamId);
+        new SatIpLiveStream(_rtspSessionFactory, _applicationHost, _loggerFactory.CreateLogger<SatIpLiveStream>(), _loggerFactory.CreateLogger<SatIpLiveStream.RtpPayloadStream>(), mediaSource, tunerHostId, originalStreamId);
 }

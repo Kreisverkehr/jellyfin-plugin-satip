@@ -262,10 +262,18 @@ internal static partial class LoggerExtensions
     internal static partial void LogSatIpPayloadStreamCreated(this ILogger logger);
 
     [LoggerMessage(
-        EventId = 4030,
+        EventId = 4040,
         EventName = "SAT>IP TsPayloadStream disposed",
         Level = LogLevel.Debug,
-        Message = "Stream for ts payload was disposed. Stacktrace: {stacktrace}"
+        Message = "Stream for ts payload was disposed. Stacktrace: \r\n{stacktrace}"
         )]
     internal static partial void LogSatIpPayloadStreamDisposed(this ILogger logger, string stacktrace);
+
+    [LoggerMessage(
+        EventId = 4050,
+        EventName = "SAT>IP LiveStream closed",
+        Level = LogLevel.Debug,
+        Message = "Livestream containing the RTSP session was closed. Stacktrace: \r\n{stacktrace}"
+        )]
+    internal static partial void LogSatIpLiveStreamClosed(this ILogger logger, string stacktrace);
 }

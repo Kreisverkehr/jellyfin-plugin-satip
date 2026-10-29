@@ -127,6 +127,13 @@ internal sealed class SatIpLiveStream : ILiveStream
     private async Task CloseCoreAsync()
     {
         _logger.LogEnterMethod();
+
+        if(_logger.IsEnabled(LogLevel.Debug))
+        {
+            var stacktrace = new StackTrace(fNeedFileInfo: true);
+            _logger.LogSatIpLiveStreamClosed(stacktrace.ToString());
+        }
+
         await _lifecycleGate.WaitAsync().ConfigureAwait(false);
         RtspSession? session;
         Task? receiveTask;

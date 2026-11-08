@@ -18,15 +18,11 @@ internal sealed class SatIpLiveStream : ILiveStream
     private readonly IRtspSessionFactory _rtspSessionFactory;
     private readonly IServerApplicationHost _applicationHost;
     private readonly ILogger<SatIpLiveStream> _logger;
+    private readonly ILogger<RtpPayloadStream> _streamLogger;
     private readonly Uri _streamUri;
-    private readonly Channel<byte[]> _payloads = Channel.CreateUnbounded<byte[]>(new()
-    {
-        SingleReader = true,
-        SingleWriter = true
-    });
     private readonly CancellationTokenSource _receiveCancellation = new();
     private readonly SemaphoreSlim _lifecycleGate = new(1, 1);
-    private readonly Stream _stream;
+    private readonly List<RtpPayloadStream> _streams = [];
     private readonly Lock _closeLock = new();
     private RtspSession? _session;
     private Task? _receiveTask;
@@ -42,6 +38,7 @@ internal sealed class SatIpLiveStream : ILiveStream
         _rtspSessionFactory = rtspSessionFactory;
         _applicationHost = applicationHost;
         _logger = logger;
+        _streamLogger = streamLogger;
         UniqueId = Guid.NewGuid().ToString("N");
         TunerHostId = tunerHostId;
         OriginalStreamId = originalStreamId;
@@ -49,11 +46,10 @@ internal sealed class SatIpLiveStream : ILiveStream
             ?? throw new InvalidOperationException("The media source could not be copied.");
         MediaSource.Path = $"{_applicationHost.GetApiUrlForLocalAccess().TrimEnd('/')}/LiveTv/LiveStreamFiles/{UniqueId}/stream.ts";
         MediaSource.Protocol = MediaProtocol.Http;
-        _stream = new RtpPayloadStream(_payloads.Reader, streamLogger);
         _logger.LogSatIpLiveStreamCreated(_streamUri, MediaSource.Path);
     }
 
-    public int ConsumerCount { get; set; }
+    public int ConsumerCount { get; set; } = 1;
 
     public string OriginalStreamId { get; set; }
 
@@ -86,7 +82,12 @@ internal sealed class SatIpLiveStream : ILiveStream
         _logger.LogExitMethod();
     }
 
-    public Stream GetStream() => _stream;
+    public Stream GetStream()
+    {
+        RtpPayloadStream stream = new(_streamLogger);
+        _streams.Add(stream);
+        return stream;
+    }
 
     public Task Close()
     {
@@ -106,7 +107,7 @@ internal sealed class SatIpLiveStream : ILiveStream
             while (true)
             {
                 var packet = await session.ReceiveRtpAsync(cancellationToken).ConfigureAwait(false);
-                await _payloads.Writer.WriteAsync(packet.Payload.ToArray(), cancellationToken).ConfigureAwait(false);
+                await BroadcastPayloadsAsync(packet.Payload.ToArray(), cancellationToken).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -117,10 +118,13 @@ internal sealed class SatIpLiveStream : ILiveStream
             failure = exception;
             _logger.LogSatIpLiveStreamFailure(exception);
         }
-        finally
-        {
-            _payloads.Writer.TryComplete(failure);
-        }
+        _logger.LogExitMethod();
+    }
+
+    private async Task BroadcastPayloadsAsync(byte[] payload, CancellationToken cancellationToken = default)
+    {
+        _logger.LogEnterMethod();
+        await Task.WhenAll(_streams.Where(s => !s.IsDisposed).Select(stream => stream.Writer.WriteAsync(payload, cancellationToken).AsTask())).ConfigureAwait(false);
         _logger.LogExitMethod();
     }
 
@@ -160,8 +164,9 @@ internal sealed class SatIpLiveStream : ILiveStream
         }
         finally
         {
-            _payloads.Writer.TryComplete();
             _receiveCancellation.Dispose();
+            foreach (var stream in _streams.Where(s => !s.IsDisposed))
+                stream.Dispose();
         }
         _logger.LogExitMethod();
     }
@@ -169,17 +174,26 @@ internal sealed class SatIpLiveStream : ILiveStream
     internal sealed class RtpPayloadStream : Stream
     {
         private readonly ChannelReader<byte[]> _reader;
+        private readonly Channel<byte[]> _payloads = Channel.CreateUnbounded<byte[]>(new()
+        {
+            SingleReader = true,
+            SingleWriter = true
+        });
         private readonly ILogger<RtpPayloadStream> _logger;
         private byte[]? _currentPayload;
         private int _currentOffset;
         private bool _disposed;
 
-        public RtpPayloadStream(ChannelReader<byte[]> reader, ILogger<RtpPayloadStream> logger)
+        public RtpPayloadStream(ILogger<RtpPayloadStream> logger)
         {
-            _reader = reader;
+            _reader = _payloads.Reader;
             _logger = logger;
             _logger.LogSatIpPayloadStreamCreated();
         }
+
+        internal bool IsDisposed => _disposed;
+
+        internal ChannelWriter<byte[]> Writer => _payloads.Writer;
 
         public override bool CanRead => !_disposed;
 
@@ -245,6 +259,8 @@ internal sealed class SatIpLiveStream : ILiveStream
                 var stacktrace = new StackTrace(fNeedFileInfo: true);
                 _logger.LogSatIpPayloadStreamDisposed(stacktrace.ToString());
             }
+
+            _payloads.Writer.TryComplete();
 
             _disposed = true;
             base.Dispose(disposing);

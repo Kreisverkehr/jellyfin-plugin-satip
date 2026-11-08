@@ -230,6 +230,46 @@ internal static partial class LoggerExtensions
     internal static partial void LogRtspCommandResponseBody(this ILogger logger, string responseBody);
 
     [LoggerMessage(
+        EventId = 3050,
+        EventName = "SAT>IP RTP UDP ports bound",
+        Level = LogLevel.Debug,
+        Message = "Bound local RTP endpoint {RtpEndpoint} and RTCP endpoint {RtcpEndpoint}"
+        )]
+    internal static partial void LogRtpPortsBound(this ILogger logger, System.Net.IPEndPoint rtpEndpoint, System.Net.IPEndPoint rtcpEndpoint);
+
+    [LoggerMessage(
+        EventId = 3051,
+        EventName = "SAT>IP RTP transport negotiated",
+        Level = LogLevel.Debug,
+        Message = "RTSP SETUP negotiated transport: {Transport}"
+        )]
+    internal static partial void LogRtpTransportNegotiated(this ILogger logger, string transport);
+
+    [LoggerMessage(
+        EventId = 3052,
+        EventName = "SAT>IP first RTP packet received",
+        Level = LogLevel.Information,
+        Message = "Received first RTP packet from {RemoteEndpoint}: {PacketBytes} bytes, sequence {SequenceNumber}"
+        )]
+    internal static partial void LogFirstRtpPacket(this ILogger logger, System.Net.IPEndPoint remoteEndpoint, int packetBytes, ushort sequenceNumber);
+
+    [LoggerMessage(
+        EventId = 3053,
+        EventName = "SAT>IP RTP packets missing",
+        Level = LogLevel.Warning,
+        Message = "No RTP packets received from {StreamUri} within {TimeoutSeconds} seconds after PLAY"
+        )]
+    internal static partial void LogNoRtpPacketsReceived(this ILogger logger, Uri streamUri, double timeoutSeconds);
+
+    [LoggerMessage(
+        EventId = 3054,
+        EventName = "SAT>IP RTP receive status",
+        Level = LogLevel.Debug,
+        Message = "RTP receive status for {StreamUri}: {PacketCount} packets, {ByteCount} bytes, last sequence {LastSequence}; last packet {TimeSinceLastPacket} ago"
+        )]
+    internal static partial void LogRtpReceiveStatus(this ILogger logger, Uri streamUri, long packetCount, long byteCount, int lastSequence, TimeSpan? timeSinceLastPacket);
+
+    [LoggerMessage(
         EventId = 4000,
         EventName = "SAT>IP LiveStream created",
         Level = LogLevel.Information,

@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Sockets;
+using System.Diagnostics;
 using System.Text;
 using Kreisverkehr.Jellyfin.Plugin.SatIp.Extensions;
 using Microsoft.Extensions.Logging;
@@ -18,6 +19,13 @@ namespace Kreisverkehr.Jellyfin.Plugin.SatIp.Rtsp;
         private TimeSpan _keepAliveInterval = TimeSpan.FromSeconds(30);
         private CancellationTokenSource? _keepAliveCancellation;
         private Task? _keepAliveTask;
+        private CancellationTokenSource? _rtpMonitorCancellation;
+        private Task? _rtpMonitorTask;
+        private long _receivedRtpPackets;
+        private long _receivedRtpBytes;
+        private long _lastRtpPacketTimestamp;
+        private int _lastRtpSequence = -1;
+        private int _firstRtpPacketLogged;
         private int _cseq;
 
         private NetworkStream ControlStream => _controlStream ?? throw new InvalidOperationException("The RTSP connection has not been opened.");
@@ -46,11 +54,14 @@ namespace Kreisverkehr.Jellyfin.Plugin.SatIp.Rtsp;
                 EnsureSuccess(options, "OPTIONS");
 
                 var clientPort = ((IPEndPoint)rtpClient.Client.LocalEndPoint!).Port;
+                logger?.LogRtpPortsBound((IPEndPoint)rtpClient.Client.LocalEndPoint!, (IPEndPoint)rtcpClient.Client.LocalEndPoint!);
                 var setup = await session.SendRequestAsync("SETUP", new Dictionary<string, string>
                 {
                     ["Transport"] = $"RTP/AVP;unicast;client_port={clientPort}-{clientPort + 1};mode=\"PLAY\"",
                 }, cancellationToken).ConfigureAwait(false);
                 EnsureSuccess(setup, "SETUP");
+                setup.Headers.TryGetValue("Transport", out var transportHeader);
+                logger?.LogRtpTransportNegotiated(transportHeader ?? "<missing>");
                 if (setup.Headers.TryGetValue("Session", out var sessionHeader))
                     session.InitializeSession(sessionHeader);
 
@@ -59,6 +70,7 @@ namespace Kreisverkehr.Jellyfin.Plugin.SatIp.Rtsp;
                     : new Dictionary<string, string> { ["Session"] = session._sessionId };
                 var play = await session.SendRequestAsync("PLAY", playHeaders, cancellationToken).ConfigureAwait(false);
                 EnsureSuccess(play, "PLAY");
+                session.StartRtpMonitor();
                 session.StartKeepAlive();
                 logger?.LogExitMethod();
                 return session;
@@ -76,6 +88,13 @@ namespace Kreisverkehr.Jellyfin.Plugin.SatIp.Rtsp;
             if (!RtpPacket.TryParse(result.Buffer, out var packet))
                 throw new InvalidDataException("The SAT>IP server sent an invalid RTP packet.");
 
+            Interlocked.Increment(ref _receivedRtpPackets);
+            Interlocked.Add(ref _receivedRtpBytes, result.Buffer.Length);
+            Volatile.Write(ref _lastRtpSequence, packet.SequenceNumber);
+            Volatile.Write(ref _lastRtpPacketTimestamp, Stopwatch.GetTimestamp());
+            if (Interlocked.CompareExchange(ref _firstRtpPacketLogged, 1, 0) == 0)
+                _logger?.LogFirstRtpPacket(result.RemoteEndPoint, result.Buffer.Length, packet.SequenceNumber);
+
             return packet;
         }
 
@@ -85,6 +104,11 @@ namespace Kreisverkehr.Jellyfin.Plugin.SatIp.Rtsp;
             if (_keepAliveTask is not null)
                 await _keepAliveTask.ConfigureAwait(false);
             _keepAliveCancellation?.Dispose();
+
+            _rtpMonitorCancellation?.Cancel();
+            if (_rtpMonitorTask is not null)
+                await _rtpMonitorTask.ConfigureAwait(false);
+            _rtpMonitorCancellation?.Dispose();
 
             if (_sessionId is not null && _tcpClient.Connected)
             {
@@ -135,6 +159,37 @@ namespace Kreisverkehr.Jellyfin.Plugin.SatIp.Rtsp;
 
             _keepAliveCancellation = new CancellationTokenSource();
             _keepAliveTask = KeepAliveAsync(_keepAliveCancellation.Token);
+        }
+
+        private void StartRtpMonitor()
+        {
+            _rtpMonitorCancellation = new CancellationTokenSource();
+            _rtpMonitorTask = MonitorRtpAsync(_rtpMonitorCancellation.Token);
+        }
+
+        private async Task MonitorRtpAsync(CancellationToken cancellationToken)
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken).ConfigureAwait(false);
+                if (Interlocked.Read(ref _receivedRtpPackets) == 0)
+                    _logger?.LogNoRtpPacketsReceived(_uri, 5);
+
+                using var timer = new PeriodicTimer(TimeSpan.FromSeconds(30));
+                while (await timer.WaitForNextTickAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    var packets = Interlocked.Read(ref _receivedRtpPackets);
+                    var bytes = Interlocked.Read(ref _receivedRtpBytes);
+                    var lastPacketTimestamp = Volatile.Read(ref _lastRtpPacketTimestamp);
+                    var timeSinceLastPacket = lastPacketTimestamp == 0
+                        ? (TimeSpan?)null
+                        : Stopwatch.GetElapsedTime(lastPacketTimestamp);
+                    _logger?.LogRtpReceiveStatus(_uri, packets, bytes, Volatile.Read(ref _lastRtpSequence), timeSinceLastPacket);
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+            }
         }
 
         private async Task KeepAliveAsync(CancellationToken cancellationToken)

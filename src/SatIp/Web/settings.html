@@ -11,6 +11,11 @@
                     <input is="emby-input" type="number" id="txtEpgScanDurationSeconds" min="1" step="1" required label="EPG scan duration (seconds)" />
                     <div class="fieldDescription">Time in senconds to listen to each channel while collecting EPG data.</div>
                 </div>
+                <div class="inputContainer">
+                    <div class="fieldDescription">Inclusive UDP port range (49152-65535) for RTP (even port) and RTCP (following odd port).</div>
+                    <input is="emby-input" type="number" id="txtUdpPortRangeStart" min="49152" max="65534" step="2" required label="UDP port range start (RTP)" />
+                    <input is="emby-input" type="number" id="txtUdpPortRangeEnd" min="49153" max="65535" step="2" required label="UDP port range end (RTCP)" />
+                </div>
                 <div class="checkboxContainer">
                     <label>
                         <input is="emby-checkbox" type="checkbox" id="chkIgnoreServerPlaylist" />

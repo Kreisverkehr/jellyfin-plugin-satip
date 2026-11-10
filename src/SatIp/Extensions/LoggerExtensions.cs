@@ -289,7 +289,7 @@ internal static partial class LoggerExtensions
         EventId = 4020,
         EventName = "SAT>IP LiveStream failure",
         Level = LogLevel.Warning,
-        Message = "Failure while receiving SAT>IP livestream data"
+        Message = "Failure while receiving SAT>IP livestream data: {exception}"
         )]
     internal static partial void LogSatIpLiveStreamFailure(this ILogger logger, Exception exception);
 

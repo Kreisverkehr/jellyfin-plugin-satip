@@ -11,4 +11,8 @@ public class PluginConfiguration : BasePluginConfiguration
 	public bool ReplacePlaylistHostWithTunerHost { get; set; } = true;
 
 	public int EpgScanDurationSeconds { get; set; } = 30;
+
+	public int UdpPortRangeStart { get; set; } = 50000;
+
+	public int UdpPortRangeEnd { get; set; } = 50101;
 }

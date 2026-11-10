@@ -104,8 +104,8 @@ public readonly struct RtpPacket
             end -= paddingLength;
         }
 
-        if (offset >= end)
-            return false;
+        // if (offset >= end)
+        //     return false;
 
         var markerAndPayloadType = span[1];
         packet = new RtpPacket(

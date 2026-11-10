@@ -13,8 +13,7 @@ public sealed class RtspSession : IAsyncDisposable
     private readonly ILogger<RtspSession>? _logger;
     private readonly TcpClient _tcpClient;
     private NetworkStream? _controlStream;
-    private readonly UdpClient _rtpClient;
-    private readonly UdpClient _rtcpClient;
+    private readonly RtpPortLease _portLease;
     private string? _sessionId;
     private TimeSpan _keepAliveInterval = TimeSpan.FromSeconds(30);
     private CancellationTokenSource? _keepAliveCancellation;
@@ -30,34 +29,36 @@ public sealed class RtspSession : IAsyncDisposable
 
     private NetworkStream ControlStream => _controlStream ?? throw new InvalidOperationException("The RTSP connection has not been opened.");
 
-    private RtspSession(Uri uri, ILogger<RtspSession>? logger, TcpClient tcpClient, UdpClient rtpClient, UdpClient rtcpClient)
+    private RtspSession(Uri uri, ILogger<RtspSession>? logger, TcpClient tcpClient, RtpPortLease portLease)
     {
         _uri = uri;
         _logger = logger;
         _tcpClient = tcpClient;
-        _rtpClient = rtpClient;
-        _rtcpClient = rtcpClient;
+        _portLease = portLease;
     }
 
-    public static async Task<RtspSession> OpenAsync(Uri uri, ILogger<RtspSession>? logger = null, CancellationToken cancellationToken = default)
+    public static async Task<RtspSession> OpenAsync(Uri uri, IRtpPortAllocator portAllocator, ILogger<RtspSession>? logger = null, CancellationToken cancellationToken = default)
     {
         logger?.LogEnterMethod();
-        var (rtpClient, rtcpClient) = BindRtpPorts();
         var tcpClient = new TcpClient(AddressFamily.InterNetwork);
-        var session = new RtspSession(uri, logger, tcpClient, rtpClient, rtcpClient);
+        RtpPortLease? portLease = null;
+        RtspSession? session = null;
 
         try
         {
+            portLease = portAllocator.Allocate();
+            session = new RtspSession(uri, logger, tcpClient, portLease);
             await tcpClient.ConnectAsync(uri.DnsSafeHost, uri.Port, cancellationToken).ConfigureAwait(false);
             session._controlStream = tcpClient.GetStream();
             var options = await session.SendRequestAsync("OPTIONS", null, cancellationToken).ConfigureAwait(false);
             EnsureSuccess(options, "OPTIONS");
 
-            var clientPort = ((IPEndPoint)rtpClient.Client.LocalEndPoint!).Port;
-            logger?.LogRtpPortsBound((IPEndPoint)rtpClient.Client.LocalEndPoint!, (IPEndPoint)rtcpClient.Client.LocalEndPoint!);
+            var rtpEndPoint = (IPEndPoint)portLease.RtpClient.Client.LocalEndPoint!;
+            var rtcpEndPoint = (IPEndPoint)portLease.RtcpClient.Client.LocalEndPoint!;
+            logger?.LogRtpPortsBound(rtpEndPoint, rtcpEndPoint);
             var setup = await session.SendRequestAsync("SETUP", new Dictionary<string, string>
             {
-                ["Transport"] = $"RTP/AVP;unicast;client_port={clientPort}-{clientPort + 1};mode=\"PLAY\"",
+                ["Transport"] = $"RTP/AVP;unicast;client_port={rtpEndPoint.Port}-{rtcpEndPoint.Port};mode=\"PLAY\"",
             }, cancellationToken).ConfigureAwait(false);
             EnsureSuccess(setup, "SETUP");
             setup.Headers.TryGetValue("Transport", out var transportHeader);
@@ -77,14 +78,23 @@ public sealed class RtspSession : IAsyncDisposable
         }
         catch
         {
-            await session.DisposeAsync().ConfigureAwait(false);
+            if (session is not null)
+            {
+                await session.DisposeAsync().ConfigureAwait(false);
+            }
+            else
+            {
+                portLease?.Dispose();
+                tcpClient.Dispose();
+            }
+
             throw;
         }
     }
 
     public async Task<RtpPacket> ReceiveRtpAsync(CancellationToken cancellationToken)
     {
-        var result = await _rtpClient.ReceiveAsync(cancellationToken).ConfigureAwait(false);
+        var result = await _portLease.RtpClient.ReceiveAsync(cancellationToken).ConfigureAwait(false);
         if (!RtpPacket.TryParse(result.Buffer, out var packet))
             throw new InvalidDataException("The SAT>IP server sent an invalid RTP packet.");
 
@@ -128,8 +138,7 @@ public sealed class RtspSession : IAsyncDisposable
             }
         }
 
-        _rtpClient.Dispose();
-        _rtcpClient.Dispose();
+        _portLease.Dispose();
         _tcpClient.Dispose();
     }
 
@@ -311,33 +320,6 @@ public sealed class RtspSession : IAsyncDisposable
         }
 
         throw new InvalidDataException("The SAT>IP server returned an oversized RTSP header.");
-    }
-
-    private static (UdpClient Rtp, UdpClient Rtcp) BindRtpPorts()
-    {
-        for (var attempt = 0; attempt < 32; attempt++)
-        {
-            var rtpClient = new UdpClient(AddressFamily.InterNetwork);
-            rtpClient.Client.Bind(new IPEndPoint(IPAddress.Any, 0));
-            var port = ((IPEndPoint)rtpClient.Client.LocalEndPoint!).Port;
-            if ((port & 1) != 0 || port == 65534)
-            {
-                rtpClient.Dispose();
-                continue;
-            }
-
-            try
-            {
-                var rtcpClient = new UdpClient(new IPEndPoint(IPAddress.Any, port + 1));
-                return (rtpClient, rtcpClient);
-            }
-            catch (SocketException)
-            {
-                rtpClient.Dispose();
-            }
-        }
-
-        throw new SocketException((int)SocketError.AddressAlreadyInUse);
     }
 
     private static void EnsureSuccess(RtspResponse response, string method)

@@ -71,11 +71,11 @@ public class TunerHost : ISatIpTunerHost
     public async Task<List<ChannelInfo>> GetChannels(bool enableCache, CancellationToken cancellationToken)
     {
         _logger.LogEnterMethod();
-        RegisterListingsProvider();
         var configuredDeviceIds = GetConfiguredDeviceIds();
         if (!enableCache || !_channelCacheLoaded || !_cachedDeviceIds.SetEquals(configuredDeviceIds))
         {
             await FillChannelCache(configuredDeviceIds, cancellationToken);
+            RegisterListingsProvider();
         }
 
         _logger.LogExitMethod();
@@ -93,12 +93,17 @@ public class TunerHost : ISatIpTunerHost
         }
 
         var providerInfo = options.ListingProviders?.FirstOrDefault(p => string.Equals(p.Type, "satip", StringComparison.OrdinalIgnoreCase)) ?? new();
-        providerInfo.Type = "satip";
-        providerInfo.EnableAllTuners = false;
-        providerInfo.EnabledTuners = GetConfiguredDeviceIds().ToArray();
+        var configuredDeviceIds = GetConfiguredDeviceIds().ToArray();
 
-        var listingsMgr = _serviceProvider.GetRequiredService<IListingsManager>();
-        listingsMgr.SaveListingProvider(providerInfo, validateLogin: false, validateListings: false);
+        if (providerInfo.EnabledTuners is null || !providerInfo.EnabledTuners.SequenceEqual(configuredDeviceIds))
+        {
+            providerInfo.Type = "satip";
+            providerInfo.EnableAllTuners = false;
+            providerInfo.EnabledTuners = configuredDeviceIds;
+
+            var listingsMgr = _serviceProvider.GetRequiredService<IListingsManager>();
+            listingsMgr.SaveListingProvider(providerInfo, validateLogin: false, validateListings: false);
+        }
         _logger.LogExitMethod();
     }
 

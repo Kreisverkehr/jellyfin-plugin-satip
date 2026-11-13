@@ -23,7 +23,7 @@
     </PackageReference>
     <PackageReference Include="Kreisverkehr.NetUpnp" Version="0.2.0" />
     <PackageReference Include="Kreisverkehr.NetSsdp" Version="0.2.0" />
-    <PackageReference Include="Kreisverkehr.TsDecoder" Version="4.0.0-beta3" />
+    <PackageReference Include="Kreisverkehr.DvbMetadataDecoder" Version="0.2.1" />
     <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.14" />
   </ItemGroup>
 

@@ -1,8 +1,6 @@
 using System.Runtime.CompilerServices;
 using System.Text;
-using Cinegy.TsDecoder.Descriptors;
-using Cinegy.TsDecoder.Tables;
-using Cinegy.TsDecoder.TransportStream;
+using Kreisverkehr.DvbMetadataDecoder;
 using Kreisverkehr.Jellyfin.Plugin.SatIp.Extensions;
 using Microsoft.Extensions.Logging;
 
@@ -10,7 +8,7 @@ namespace Kreisverkehr.Jellyfin.Plugin.SatIp.Dvb;
 
 public interface IProgramInfoFactory
 {
-    IAsyncEnumerable<ProgramInfo> GetProgramInfoFromEit(EventInformationTable eit, CancellationToken cancellationToken = default);
+    IAsyncEnumerable<ProgramInfo> GetProgramInfoFromEit(IEventInformationTable eit, CancellationToken cancellationToken = default);
 }
 
 public class ProgramInfoFactory : IProgramInfoFactory
@@ -24,29 +22,29 @@ public class ProgramInfoFactory : IProgramInfoFactory
         _loggerFactory = loggerFactory;
     }
 
-    public async IAsyncEnumerable<ProgramInfo> GetProgramInfoFromEit(EventInformationTable eit, [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    public async IAsyncEnumerable<ProgramInfo> GetProgramInfoFromEit(IEventInformationTable eit, [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        foreach (var item in eit.Items)
+        foreach (var item in eit.Events)
         {
             var info = new ProgramInfo(_loggerFactory.CreateLogger<ProgramInfo>())
             {
                 Id = $"{item.EventId:x4}-{eit.ServiceId:x4}-{item.StartTime:x10}"
             };
 
-            if (item.Descriptors.OfType<ShortEventDescriptor>()?.Any() ?? false)
+            if (item.Descriptors.OfType<IShortEventDescriptor>()?.Any() ?? false)
             {
-                var shortDescription = item.Descriptors.OfType<ShortEventDescriptor>().First();
-                info.Name = shortDescription.EventNameChar?.Value;
-                info.ShortOverview = shortDescription.TextChar?.Value;
+                var shortDescription = item.Descriptors.OfType<IShortEventDescriptor>().First();
+                info.Name = shortDescription.Name;
+                info.ShortOverview = shortDescription.Text;
             }
 
-            if (item.Descriptors.OfType<ExtendedEventDescriptor>().Any())
+            if (item.Descriptors.OfType<IExtendedEventDescriptor>().Any())
             {
                 StringBuilder sb = new StringBuilder();
-                var extDescriptors = item.Descriptors.OfType<ExtendedEventDescriptor>();
-                foreach (var extDEsc in extDescriptors.Where(d => d.TextChar is not null))
+                var extDescriptors = item.Descriptors.OfType<IExtendedEventDescriptor>();
+                foreach (var extDEsc in extDescriptors.Where(d => !string.IsNullOrWhiteSpace(d.Text)))
                 {
-                    sb.Append(extDEsc.TextChar.Value);
+                    sb.Append(extDEsc.Text);
                 }
 
                 if (sb.Length > 0 && extDescriptors.Any(d => d.Items is not null))
@@ -56,12 +54,12 @@ public class ProgramInfoFactory : IProgramInfoFactory
                     foreach (var descItem in extDescriptors
                         .Where(d => d.Items is not null)
                         .SelectMany(d => d.Items)
-                        .Where(i => i.ItemChar is not null))
+                        .Where(i => !string.IsNullOrEmpty(i.Text)))
                     {
-                        if (descItem.ItemDescriptionChar is not null)
-                            sb.AppendLine($"{descItem.ItemDescriptionChar.Value}: {descItem.ItemChar.Value}");
+                        if (!string.IsNullOrWhiteSpace(descItem.Description))
+                            sb.AppendLine($"{descItem.Description}: {descItem.Text}");
                         else
-                            sb.Append(descItem.ItemChar.Value);
+                            sb.Append(descItem.Text);
                     }
                 }
 
@@ -70,8 +68,8 @@ public class ProgramInfoFactory : IProgramInfoFactory
 
             try
             {
-                info.StartDate = item.StartDateTime ?? DateTime.MinValue;
-                info.EndDate = info.StartDate + item.DurationTimeSpan;
+                info.StartDate = item.StartTime ?? DateTime.MinValue;
+                info.EndDate = info.StartDate + item.Duration;
             }
             // If these fail, we just don't set them
             catch (Exception exception)
@@ -80,14 +78,14 @@ public class ProgramInfoFactory : IProgramInfoFactory
             }
 
             info.Genres ??= [];
-            foreach (var contentType in item.Descriptors.OfType<ContentDescriptor>().SelectMany(d => d.ContentTypes))
+            foreach (var contentType in item.Descriptors.OfType<IContentDescriptor>().SelectMany(d => d.ContentTypes))
             {
                 info.IsMovie |= contentType.Level1Type == 0x1;
                 info.IsNews |= contentType.Level1Type == 0x2;
                 info.IsSports |= contentType.Level1Type == 0x4;
                 info.IsKids |= contentType.Level1Type == 0x5;
                 info.IsEducational |= contentType.Level1Type == 0x9;
-                info.Genres.Add(contentType.Level2TypeString);
+                // info.Genres.Add(contentType.Level2TypeString);
             }
 
             yield return info;

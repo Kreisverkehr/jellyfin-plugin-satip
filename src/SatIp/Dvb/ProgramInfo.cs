@@ -1,7 +1,5 @@
 using System.Diagnostics;
 using System.Text;
-using Cinegy.TsDecoder.Descriptors;
-using Cinegy.TsDecoder.Tables;
 using Kreisverkehr.Jellyfin.Plugin.SatIp.Extensions;
 using Jellyfin.Database.Implementations.Entities.Libraries;
 using Microsoft.Extensions.Logging;

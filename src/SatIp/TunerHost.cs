@@ -92,16 +92,13 @@ public class TunerHost : ISatIpTunerHost
             return;
         }
 
-        if (options.ListingProviders?.Any(p => string.Equals(p.Type, "satip", StringComparison.OrdinalIgnoreCase)) ?? false)
-            return;
+        var providerInfo = options.ListingProviders?.FirstOrDefault(p => string.Equals(p.Type, "satip", StringComparison.OrdinalIgnoreCase)) ?? new();
+        providerInfo.Type = "satip";
+        providerInfo.EnableAllTuners = false;
+        providerInfo.EnabledTuners = GetConfiguredDeviceIds().ToArray();
 
         var listingsMgr = _serviceProvider.GetRequiredService<IListingsManager>();
-        listingsMgr.SaveListingProvider(new ListingsProviderInfo
-        {
-            Type = "satip",
-            EnableAllTuners = false,
-            EnabledTuners = GetConfiguredDeviceIds().ToArray(),
-        }, false, false);
+        listingsMgr.SaveListingProvider(providerInfo, validateLogin: false, validateListings: false);
         _logger.LogExitMethod();
     }
 

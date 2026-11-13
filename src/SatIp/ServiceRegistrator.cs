@@ -21,7 +21,7 @@ public class ServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<IRtpPortAllocator, RtpPortAllocator>();
         serviceCollection.AddSingleton<IRtspSessionFactory, RtspSessionFactory>();
         serviceCollection.AddSingleton<ISatIpLiveStreamFactory, SatIpLiveStreamFactory>();
-        serviceCollection.AddKeyedSingleton<IEpgScanner, Dvb.EpgScanner>("dvb");
+        serviceCollection.AddKeyedTransient<IEpgScanner, Dvb.EpgScanner>("dvb");
         serviceCollection.AddDvbMetadataDecoder();
     }
 }

@@ -21,5 +21,16 @@ public static class UriExtensions
         public NameValueCollection QueryParameters => HttpUtility.ParseQueryString(uri.Query);
 
         public string ModulationSystem => uri.QueryParameters["msys"] ?? string.Empty;
+
+        public Uri GetMultiplexUri()
+        {
+            var queryParameters = uri.QueryParameters;
+            queryParameters["pids"] = "all";
+
+            return new UriBuilder(uri)
+            {
+                Query = queryParameters.ToString()
+            }.Uri;
+        }
     }
 }

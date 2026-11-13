@@ -19,39 +19,22 @@ namespace Kreisverkehr.Jellyfin.Plugin.SatIp.Dvb;
 public class EpgScanner : IEpgScanner
 {
     private readonly ILogger<EpgScanner> _logger;
-    private readonly IConfigurationManager _configurationManager;
-    private readonly ISatIpTunerHost _tunerHost;
     private readonly IProgramInfoFactory _programInfoFactory;
     private readonly IRtspSessionFactory _rtspSessionFactory;
-    private readonly IServiceProvider _serviceProvider;
+    private readonly IDvbMetadataRepository _dvbMetadata;
+    private readonly IDvbMetadataDecoder _decoder;
 
-    public EpgScanner(ILogger<EpgScanner> logger, IConfigurationManager configurationManager, ISatIpTunerHost tunerHost, IProgramInfoFactory programInfoFactory, IRtspSessionFactory rtspSessionFactory, IServiceProvider serviceProvider)
+    public EpgScanner(ILogger<EpgScanner> logger, IProgramInfoFactory programInfoFactory, IRtspSessionFactory rtspSessionFactory, IDvbMetadataRepository dvbMetadata, IDvbMetadataDecoder decoder)
     {
         _logger = logger;
-        _configurationManager = configurationManager;
-        _tunerHost = tunerHost;
         _programInfoFactory = programInfoFactory;
         _rtspSessionFactory = rtspSessionFactory;
-        _serviceProvider = serviceProvider;
+        _dvbMetadata = dvbMetadata;
+        _decoder = decoder;
     }
 
-    public async IAsyncEnumerable<ProgramInfo> ScanAsync(string channelId, DateTime startDateUtc, DateTime endDateUtc, [EnumeratorCancellation] CancellationToken cancellationToken)
+    public async IAsyncEnumerable<ProgramInfo> ScanAsync(string channelId, Uri streamUri, DateTime startDateUtc, DateTime endDateUtc, [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        var mediaSources = await _tunerHost.GetChannelStreamMediaSources(channelId, cancellationToken);
-        var mediaSource = mediaSources.FirstOrDefault();
-
-        if (mediaSource == null)
-        {
-            _logger.LogNoMediaSource(channelId);
-            yield break;
-        }
-
-        if (!Uri.TryCreate(mediaSource.Path, UriKind.Absolute, out var streamUri) || !streamUri.Scheme.Equals("rtsp", StringComparison.OrdinalIgnoreCase))
-        {
-            _logger.LogInvalidRtspMediaSource(channelId);
-            yield break;
-        }
-
         using (_ = _logger.BeginScope("epg scan for channel {channelId} with uri {streamUri}", channelId, streamUri))
         {
             _logger.LogScanningPrograms(channelId);
@@ -82,23 +65,23 @@ public class EpgScanner : IEpgScanner
             yield break;
         }
 
-        await using var scope = _serviceProvider.CreateAsyncScope();
-        var decoder = scope.ServiceProvider.GetRequiredService<IDvbMetadataDecoder>();
-        var repository = scope.ServiceProvider.GetRequiredService<IDvbMetadataRepository>();
-        var scanDuration = TimeSpan.FromSeconds(Math.Max(1, Plugin.GetConfiguration().EpgScanDurationSeconds));
-        await RunScanAsync(decoder, streamUri, scanDuration, cancellationToken);
-
-        var requestedServiceId = repository.ProgramMapTables.FirstOrDefault(pmt => requestedPids.Contains(pmt.ProgramMapPid))?.ProgramNumber;
-        if(requestedPids is not null && repository.ActualTransportStreamScheduleEventInformationTables.FirstOrDefault(t => t.ServiceId == requestedServiceId) is IEventInformationTable eit)
+        if (_dvbMetadata.ProgramAssociationTable.TransportStreamId == 0)
         {
-            await foreach(var program in _programInfoFactory.GetProgramInfoFromEit(eit))
+            var scanDuration = TimeSpan.FromSeconds(Math.Max(1, Plugin.GetConfiguration().EpgScanDurationSeconds));
+            await RunScanMultiplexAsync(streamUri.GetMultiplexUri(), scanDuration, cancellationToken);
+        }
+
+        var requestedServiceId = _dvbMetadata.ProgramMapTables.FirstOrDefault(pmt => requestedPids.Contains(pmt.ProgramMapPid))?.ProgramNumber;
+        if (requestedPids is not null && _dvbMetadata.ActualTransportStreamScheduleEventInformationTables.FirstOrDefault(t => t.ServiceId == requestedServiceId) is IEventInformationTable eit)
+        {
+            await foreach (var program in _programInfoFactory.GetProgramInfoFromEit(eit))
             {
                 yield return program;
             }
         }
     }
 
-    private async Task RunScanAsync(IDvbMetadataDecoder decoder, Uri streamUri, TimeSpan scanDuration, CancellationToken cancellationToken)
+    private async Task RunScanMultiplexAsync(Uri multiplexUri, TimeSpan scanDuration, CancellationToken cancellationToken)
     {
         using var scanCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         scanCancellation.CancelAfter(scanDuration);
@@ -106,11 +89,11 @@ public class EpgScanner : IEpgScanner
         RtspSession? session = null;
         try
         {
-            session = await _rtspSessionFactory.OpenAsync(streamUri, scanCancellation.Token).ConfigureAwait(false);
+            session = await _rtspSessionFactory.OpenAsync(multiplexUri, scanCancellation.Token).ConfigureAwait(false);
             while (true)
             {
                 var rtpPacket = await session.ReceiveRtpAsync(scanCancellation.Token).ConfigureAwait(false);
-                await decoder.FeedAsync(rtpPacket.Payload);
+                await _decoder.FeedAsync(rtpPacket.Payload);
             }
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)

@@ -26,9 +26,31 @@ public class ProgramInfoFactory : IProgramInfoFactory
     {
         foreach (var item in eit.Events)
         {
+            if(item.StartTime is null)
+                continue;
+
+            byte[] id = [
+                (byte)(eit.OriginalNetworkId >> 8),
+                (byte)eit.OriginalNetworkId,
+                (byte)(eit.TransportStreamId >> 8),
+                (byte)eit.TransportStreamId,
+                (byte)(eit.ServiceId >> 8),
+                (byte)eit.ServiceId,
+                (byte)(item.EventId >> 8),
+                (byte)item.EventId,
+                (byte)(item.StartTime.Value.Ticks >> 56),
+                (byte)(item.StartTime.Value.Ticks >> 48),
+                (byte)(item.StartTime.Value.Ticks >> 40),
+                (byte)(item.StartTime.Value.Ticks >> 32),
+                (byte)(item.StartTime.Value.Ticks >> 24),
+                (byte)(item.StartTime.Value.Ticks >> 16),
+                (byte)(item.StartTime.Value.Ticks >> 8),
+                (byte)item.StartTime.Value.Ticks
+            ];
+            
             var info = new ProgramInfo(_loggerFactory.CreateLogger<ProgramInfo>())
             {
-                Id = $"{item.EventId:x4}-{eit.ServiceId:x4}-{item.StartTime:x10}"
+                Id = new Guid(id).ToString()
             };
 
             if (item.Descriptors.OfType<IShortEventDescriptor>()?.Any() ?? false)

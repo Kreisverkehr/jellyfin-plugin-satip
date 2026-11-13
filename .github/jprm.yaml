@@ -2,7 +2,7 @@
 name: "SAT>IP Live TV Tuner"
 guid: "3ebdc5ac-57aa-4ed0-aedf-122f99a6976f"
 
-version: "0.1.5.1"
+version: "0.2.0.0"
 targetAbi: "12.1.0.0"
 framework: "net10.0"
 
@@ -19,4 +19,8 @@ artifacts:
   - "Kreisverkehr.TsDecoder.dll"
 
 changelog: |
-  - fix: epg scanning not possible due tu misconfigured listings provider
+  - fix: prevent EPG scans from running indefinitely
+  - feat: use the custom DVB metadata decoder for EPG scanning
+  - feat: scan EPG data per multiplex
+  - chore: align the assembly name and update dependencies
+  - note: plugin configuration may be lost during an update

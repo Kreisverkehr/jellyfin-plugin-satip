@@ -28,8 +28,6 @@ I chose SAT>IP because it is a standard that may also help other people with a s
 
 This plugin is still in an early development stage and should be considered experimental. Significant code and functionality changes are still likely, and breaking changes may occur between versions. It is not yet recommended for production use.
 
-> Important: plugin configuration may be reset or lost during updates. Before updating, make a backup of the Jellyfin plugin configuration or note your tuner and listings settings so they can be restored if needed.
-
 ### Available Now
 
 The plugin currently:

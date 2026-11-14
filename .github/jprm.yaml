@@ -12,8 +12,8 @@ category: "Live TV"
 owner: "Kreisverkehr"
 
 artifacts:
-  - "Kreisverkehr.SatIp.dll"
-  - "Kreisverkehr.SatIp.deps.json"
+  - "Kreisverkehr.Jellyfin.Plugin.SatIp.dll"
+  - "Kreisverkehr.Jellyfin.Plugin.SatIp.deps.json"
   - "Kreisverkehr.NetSsdp.dll"
   - "Kreisverkehr.NetUpnp.dll"
   - "Kreisverkehr.DvbMetadataDecoder.dll"

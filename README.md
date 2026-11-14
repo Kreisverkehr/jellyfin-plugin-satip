@@ -26,13 +26,31 @@ I chose SAT>IP because it is a standard that may also help other people with a s
 
 ## Project Status & Roadmap
 
-This plugin is at a very early stage of development. Significant code and functionality changes are likely, and breaking changes should be expected. It is not ready for production use and should not be deployed in a production environment.
+This plugin is still in an early development stage and should be considered experimental. Significant code and functionality changes are still likely, and breaking changes may occur between versions. It is not yet recommended for production use.
+
+> Important: plugin configuration may be reset or lost during updates. Before updating, make a backup of the Jellyfin plugin configuration or note your tuner and listings settings so they can be restored if needed.
 
 ### Available Now
 
-The plugin discovers SAT>IP servers on the network and reads channel entries from the M3U playlist advertised by a server. The streams are then made available to Jellyfin as SAT>IP Live TV sources.
+The plugin currently:
 
-Channel discovery currently depends on the server providing an M3U playlist. Some SAT>IP servers may not provide one, since the playlist is optional.
+- discovers SAT>IP servers and available tuners on the network
+- reads channel entries from the M3U playlist advertised by a compatible server
+- exposes the streams to Jellyfin as SAT>IP Live TV sources
+- uses a custom DVB metadata decoder for EPG parsing
+- scans EPG data per multiplex instead of per individual channel, which improves the consistency of schedule collection
+
+Channel discovery still depends on the server exposing an M3U playlist. Some SAT>IP servers do not provide one, because the playlist is optional.
+
+### Planned
+
+- improve EPG aggregation and reliability across repeated scans and multiple tuners
+- extract more transport-stream metadata such as codecs and stream compatibility hints
+- continue improving compatibility with SAT>IP servers that expose incomplete or non-standard information
+- explore a manual channel scan or fallback flow for servers without M3U playlists
+- implement a custom demultiplexer so a single SAT>IP stream can be shared safely among multiple channels and viewers without one client blocking the others
+
+These items are still in progress and may evolve as the plugin matures.
 
 ### Tuner Setup Limitation
 
@@ -40,18 +58,11 @@ Jellyfin's tuner setup currently transfers the selected SAT>IP device into the s
 
 Showing a visible confirmation of the selected device before saving requires changes to Jellyfin Web; the plugin cannot change this built-in setup form on its own.
 
-### EPG Data Limitation
+### EPG Status
 
-EPG data is currently collected in a 60-second scan for each channel. DVB schedule sections are transmitted in repeating cycles, and a cycle may take longer than the scan, so the program guide can be incomplete. Results are not yet accumulated or shared between channels on the same multiplex.
+EPG collection is now performed per multiplex and the custom DVB decoder is used during scanning. This reduces the issue where scans could be incomplete or stall when the schedule data is not received in the expected time window.
 
-### Planned
-
-- Make the plugin available for installation through a Jellyfin plugin repository.
-- Collect EIT schedule sections across scans and cache/share the results per multiplex, ideally until the expected sections have been received.
-- Extract channel metadata such as codecs from the transport stream and expose it to Jellyfin so it can identify compatible streams earlier and avoid unnecessary transcoding where possible. This may require changing the channel ID format.
-- Explore a manual channel scan that does not depend on an M3U playlist.
-
-These features are planned and are not available yet.
+Still, EPG reception depends on the upstream SAT>IP stream and the server's metadata quality. Some multiplexes may still deliver incomplete or inconsistent schedule data.
 
 ## Use of AI
 

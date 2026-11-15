@@ -35,10 +35,10 @@ public class EpgScanner : IEpgScanner
 
     public async IAsyncEnumerable<ProgramInfo> ScanAsync(string channelId, Uri streamUri, DateTime startDateUtc, DateTime endDateUtc, [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        using (_ = _logger.BeginScope("epg scan for channel {channelId} with uri {streamUri}", channelId, streamUri))
+        using (_ = _logger.BeginScope("epg scan for channel {channelId}", channelId))
         {
             _logger.LogScanningPrograms(channelId);
-            await foreach (var program in ScanStreamAsync(streamUri, cancellationToken))
+            await foreach (var program in ScanStreamAsync(channelId, streamUri, cancellationToken))
             {
                 if (program.EndDate >= startDateUtc && program.StartDate <= endDateUtc)
                 {
@@ -50,10 +50,11 @@ public class EpgScanner : IEpgScanner
         }
     }
 
-    private async IAsyncEnumerable<ProgramInfo> ScanStreamAsync(Uri streamUri, [EnumeratorCancellation] CancellationToken cancellationToken)
+    private async IAsyncEnumerable<ProgramInfo> ScanStreamAsync(string channelId, Uri streamUri, [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         // Get requested PIDs from the SAT>IP stream URI query parameters
         var pidsValue = HttpUtility.ParseQueryString(streamUri.Query)["pids"];
+        _logger.LogEpgPidsRequested(channelId, pidsValue ?? string.Empty);
         var requestedPids = pidsValue?
             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Select(value => int.TryParse(value, out var pid) ? pid : -1)
@@ -61,7 +62,7 @@ public class EpgScanner : IEpgScanner
             .ToHashSet() ?? [];
         if (requestedPids.Count == 0)
         {
-            _logger.LogInvalidPidsParameter(streamUri);
+            _logger.LogInvalidPidsParameter();
             yield break;
         }
 
@@ -71,13 +72,25 @@ public class EpgScanner : IEpgScanner
             await RunScanMultiplexAsync(streamUri.GetMultiplexUri(), scanDuration, cancellationToken);
         }
 
-        var requestedServiceId = _dvbMetadata.ProgramMapTables.FirstOrDefault(pmt => requestedPids.Contains(pmt.ProgramMapPid))?.ProgramNumber;
-        if (requestedPids is not null && _dvbMetadata.ActualTransportStreamScheduleEventInformationTables.FirstOrDefault(t => t.ServiceId == requestedServiceId) is IEventInformationTable eit)
+        var pmt = _dvbMetadata.ProgramMapTables.FirstOrDefault(pmt => requestedPids.Contains(pmt.ProgramMapPid));
+        if (pmt is null)
         {
-            await foreach (var program in _programInfoFactory.GetProgramInfoFromEit(eit))
-            {
-                yield return program;
-            }
+            _logger.LogEpgServiceIdNotFound(channelId, string.Join(",", requestedPids.Order()));
+            yield break;
+        }
+
+        var requestedServiceId = pmt.ProgramNumber;
+        _logger.LogFoundServiceId(requestedServiceId, pmt.ProgramMapPid);
+        if (_dvbMetadata.ActualTransportStreamScheduleEventInformationTables.FirstOrDefault(t => t.ServiceId == requestedServiceId) is not IEventInformationTable eit)
+        {
+            _logger.LogEpgTableNotFound(channelId, requestedServiceId);
+            yield break;
+        }
+
+        _logger.LogEpgTableFound(channelId, requestedServiceId);
+        await foreach (var program in _programInfoFactory.GetProgramInfoFromEit(eit))
+        {
+            yield return program;
         }
     }
 

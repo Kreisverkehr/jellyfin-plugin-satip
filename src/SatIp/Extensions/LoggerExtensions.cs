@@ -81,9 +81,41 @@ internal static partial class LoggerExtensions
         EventId = 1050,
         EventName = "SAT>IP stream URI has invalid PIDs",
         Level = LogLevel.Warning,
-        Message = "The SAT>IP URI does not contain a valid pids parameter. ({StreamUri})"
+        Message = "The SAT>IP stream does not contain a valid pids parameter"
         )]
-    internal static partial void LogInvalidPidsParameter(this ILogger logger, Uri streamUri);
+    internal static partial void LogInvalidPidsParameter(this ILogger logger);
+
+    [LoggerMessage(
+        EventId = 1070,
+        EventName = "SAT>IP EPG PIDs requested",
+        Level = LogLevel.Debug,
+        Message = "EPG scan for channel {ChannelId} requested PIDs {Pids}"
+        )]
+    internal static partial void LogEpgPidsRequested(this ILogger logger, string channelId, string pids);
+
+    [LoggerMessage(
+        EventId = 1071,
+        EventName = "SAT>IP EPG service ID not found",
+        Level = LogLevel.Warning,
+        Message = "No PMT matched the requested PIDs for channel {ChannelId} ({Pids})"
+        )]
+    internal static partial void LogEpgServiceIdNotFound(this ILogger logger, string channelId, string pids);
+
+    [LoggerMessage(
+        EventId = 1072,
+        EventName = "SAT>IP EPG table not found",
+        Level = LogLevel.Warning,
+        Message = "No actual transport stream schedule EIT found for channel {ChannelId}, service {ServiceId}"
+        )]
+    internal static partial void LogEpgTableNotFound(this ILogger logger, string channelId, ushort serviceId);
+
+    [LoggerMessage(
+        EventId = 1073,
+        EventName = "SAT>IP EPG table found",
+        Level = LogLevel.Debug,
+        Message = "Found actual transport stream schedule EIT for channel {ChannelId}, service {ServiceId}"
+        )]
+    internal static partial void LogEpgTableFound(this ILogger logger, string channelId, ushort serviceId);
 
     [LoggerMessage(
         EventId = 1060,
@@ -172,6 +204,70 @@ internal static partial class LoggerExtensions
         Message = "Created a new stream for channel {channelId} with streamId {streamId}"
         )]
     internal static partial void LogReturningNewStream(this ILogger logger, string channelId, string streamId);
+
+    [LoggerMessage(
+        EventId = 2100,
+        EventName = "SAT>IP channel cache access",
+        Level = LogLevel.Debug,
+        Message = "Channel cache requested (enabled: {CacheEnabled}, loaded: {CacheLoaded}, configured tuners: {ConfiguredTunerCount}, refresh required: {RefreshRequired})"
+        )]
+    internal static partial void LogChannelCacheAccess(this ILogger logger, bool cacheEnabled, bool cacheLoaded, int configuredTunerCount, bool refreshRequired);
+
+    [LoggerMessage(
+        EventId = 2110,
+        EventName = "SAT>IP channel cache populated",
+        Level = LogLevel.Information,
+        Message = "Channel cache populated from {ConfiguredTunerCount} configured tuners with {ChannelCount} unique channels"
+        )]
+    internal static partial void LogChannelCachePopulated(this ILogger logger, int configuredTunerCount, int channelCount);
+
+    [LoggerMessage(
+        EventId = 2120,
+        EventName = "SAT>IP channels returned",
+        Level = LogLevel.Information,
+        Message = "{Source} returned {ChannelCount} channels"
+        )]
+    internal static partial void LogChannelsReturned(this ILogger logger, string source, int channelCount);
+
+    [LoggerMessage(
+        EventId = 2121,
+        EventName = "SAT>IP channel inventory",
+        Level = LogLevel.Trace,
+        Message = "{Source} channel inventory: {Channels}"
+        )]
+    internal static partial void LogChannelInventory(this ILogger logger, string source, string channels);
+
+    [LoggerMessage(
+        EventId = 2130,
+        EventName = "SAT>IP M3U playlist parsed",
+        Level = LogLevel.Information,
+        Message = "Parsed {EntryCount} entries for device {Device}; {NewChannelCount} new channel IDs, {UpdatedChannelCount} existing channel IDs updated and {RepeatedIdCount} repeated IDs within the playlist"
+        )]
+    internal static partial void LogM3uPlaylistParsed(this ILogger logger, string device, int entryCount, int newChannelCount, int updatedChannelCount, int repeatedIdCount);
+
+    [LoggerMessage(
+        EventId = 2131,
+        EventName = "SAT>IP duplicate channel ID in M3U playlist",
+        Level = LogLevel.Warning,
+        Message = "M3U playlist for device {Device} contains channel ID {ChannelId} more than once; later entry replaces {ExistingName} with {IncomingName}"
+        )]
+    internal static partial void LogDuplicateChannelIdInPlaylist(this ILogger logger, string device, string channelId, string existingName, string incomingName);
+
+    [LoggerMessage(
+        EventId = 2140,
+        EventName = "SAT>IP listings provider configuration",
+        Level = LogLevel.Information,
+        Message = "Listings provider configuration ({Stage}): provider existed: {ProviderExisted}, enable all tuners: {EnableAllTuners}, enabled tuners: {EnabledTuners}"
+        )]
+    internal static partial void LogListingsProviderConfiguration(this ILogger logger, string stage, bool providerExisted, bool enableAllTuners, string enabledTuners);
+
+    [LoggerMessage(
+        EventId = 2141,
+        EventName = "SAT>IP EPG scan request",
+        Level = LogLevel.Information,
+        Message = "EPG programs requested for channel {ChannelId} from {StartDateUtc} to {EndDateUtc}"
+        )]
+    internal static partial void LogEpgScanRequest(this ILogger logger, string channelId, DateTime startDateUtc, DateTime endDateUtc);
 
     [LoggerMessage(
         EventId = 3010,

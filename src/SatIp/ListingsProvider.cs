@@ -31,9 +31,18 @@ public class ListingsProvider : ISatIpListingsProvider
         _serviceProvider = serviceProvider;
     }
 
-    public Task<List<ChannelInfo>> GetChannels(ListingsProviderInfo info, CancellationToken cancellationToken)
+    public async Task<List<ChannelInfo>> GetChannels(ListingsProviderInfo info, CancellationToken cancellationToken)
     {
-        return _tunerHost.GetChannels(true, cancellationToken);
+        var channels = await _tunerHost.GetChannels(true, cancellationToken);
+        _logger.LogChannelsReturned("Listings provider", channels.Count);
+        if (_logger.IsEnabled(LogLevel.Debug))
+        {
+            _logger.LogChannelInventory(
+                "Listings provider",
+                string.Join("; ", channels.OrderBy(channel => channel.Id).Select(channel => $"{channel.Id} [{channel.Name}]")));
+        }
+
+        return channels;
     }
 
     public Task<List<NameIdPair>> GetLineups(ListingsProviderInfo info, string country, string location)
@@ -50,6 +59,7 @@ public class ListingsProvider : ISatIpListingsProvider
 
     public async Task<IEnumerable<MediaBrowser.Controller.LiveTv.ProgramInfo>> GetProgramsAsync(ListingsProviderInfo info, string channelId, DateTime startDateUtc, DateTime endDateUtc, CancellationToken cancellationToken)
     {
+        _logger.LogEpgScanRequest(channelId, startDateUtc, endDateUtc);
         var streamUri = await GetStreamUriForChannel(channelId, cancellationToken);
         var epgScanner = await GetScannerAsync(channelId, cancellationToken);
         if(epgScanner is null || streamUri is null)

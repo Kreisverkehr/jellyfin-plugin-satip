@@ -72,14 +72,25 @@ public class TunerHost : ISatIpTunerHost
     {
         _logger.LogEnterMethod();
         var configuredDeviceIds = GetConfiguredDeviceIds();
-        if (!enableCache || !_channelCacheLoaded || !_cachedDeviceIds.SetEquals(configuredDeviceIds))
+        var refreshRequired = !enableCache || !_channelCacheLoaded || !_cachedDeviceIds.SetEquals(configuredDeviceIds);
+        _logger.LogChannelCacheAccess(enableCache, _channelCacheLoaded, configuredDeviceIds.Count, refreshRequired);
+        if (refreshRequired)
         {
             await FillChannelCache(configuredDeviceIds, cancellationToken);
             RegisterListingsProvider();
         }
 
+        var channels = _channels.Values.Select(t => t.Item1).ToList();
+        _logger.LogChannelsReturned("Tuner host", channels.Count);
+        if (_logger.IsEnabled(LogLevel.Trace))
+        {
+            _logger.LogChannelInventory(
+                "Tuner host",
+                string.Join("; ", channels.OrderBy(channel => channel.Id).Select(channel => $"{channel.Id} [{channel.Name}]")));
+        }
+
         _logger.LogExitMethod();
-        return _channels.Values.Select(t => t.Item1).ToList();
+        return channels;
     }
 
     private void RegisterListingsProvider()
@@ -92,10 +103,18 @@ public class TunerHost : ISatIpTunerHost
             return;
         }
 
-        var providerInfo = options.ListingProviders?.FirstOrDefault(p => string.Equals(p.Type, "satip", StringComparison.OrdinalIgnoreCase)) ?? new();
+        var existingProviderInfo = options.ListingProviders?.FirstOrDefault(p => string.Equals(p.Type, "satip", StringComparison.OrdinalIgnoreCase));
+        var providerInfo = existingProviderInfo ?? new();
         var configuredDeviceIds = GetConfiguredDeviceIds().ToArray();
+        var oldEnabledTuners = providerInfo.EnabledTuners is null ? string.Empty : string.Join(", ", providerInfo.EnabledTuners);
+        var updateRequired = providerInfo.EnabledTuners is null || !providerInfo.EnabledTuners.SequenceEqual(configuredDeviceIds);
+        _logger.LogListingsProviderConfiguration(
+            "before update",
+            existingProviderInfo is not null,
+            providerInfo.EnableAllTuners,
+            oldEnabledTuners);
 
-        if (providerInfo.EnabledTuners is null || !providerInfo.EnabledTuners.SequenceEqual(configuredDeviceIds))
+        if (updateRequired)
         {
             providerInfo.Type = "satip";
             providerInfo.EnableAllTuners = false;
@@ -104,6 +123,12 @@ public class TunerHost : ISatIpTunerHost
             var listingsMgr = _serviceProvider.GetRequiredService<IListingsManager>();
             listingsMgr.SaveListingProvider(providerInfo, validateLogin: false, validateListings: false);
         }
+
+        _logger.LogListingsProviderConfiguration(
+            updateRequired ? "after update" : "unchanged",
+            existingProviderInfo is not null,
+            providerInfo.EnableAllTuners,
+            providerInfo.EnabledTuners is null ? string.Empty : string.Join(", ", providerInfo.EnabledTuners));
         _logger.LogExitMethod();
     }
 
@@ -160,6 +185,7 @@ public class TunerHost : ISatIpTunerHost
 
         _cachedDeviceIds = configuredDeviceIds;
         _channelCacheLoaded = true;
+        _logger.LogChannelCachePopulated(configuredDeviceIds.Count, _channels.Count);
         _logger.LogExitMethod();
     }
 
@@ -172,17 +198,40 @@ public class TunerHost : ISatIpTunerHost
             using (var m3uParser = await M3uParser.CreateAsync(new Uri(playlistLocation)))
             {
                 var playlist = m3uParser.Parse();
+                var entryCount = 0;
+                var newChannelCount = 0;
+                var updatedChannelCount = 0;
+                var repeatedIdCount = 0;
+                var channelIdsInPlaylist = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 foreach (var entry in playlist.Entries)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
+                    entryCount++;
 
                     if (Plugin.GetConfiguration().ReplacePlaylistHostWithTunerHost && !string.IsNullOrWhiteSpace(replacementHost))
                         entry.MediaUri = ReplaceHost(entry.MediaUri, replacementHost);
 
                     var channelInfo = CreateChannelInfo(entry, device);
                     var mediaSourceInfo = CreateMediaSourceInfo(entry, device);
+                    var repeatedInPlaylist = !channelIdsInPlaylist.Add(channelInfo.Id);
+                    if (_channels.TryGetValue(channelInfo.Id, out var existingChannel))
+                    {
+                        updatedChannelCount++;
+                        if (repeatedInPlaylist)
+                        {
+                            repeatedIdCount++;
+                            _logger.LogDuplicateChannelIdInPlaylist(device.UniqueDeviceName, channelInfo.Id, existingChannel.Item1.Name, channelInfo.Name);
+                        }
+                    }
+                    else
+                    {
+                        newChannelCount++;
+                    }
+
                     _channels[channelInfo.Id] = (channelInfo, mediaSourceInfo);
                 }
+
+                _logger.LogM3uPlaylistParsed(device.UniqueDeviceName, entryCount, newChannelCount, updatedChannelCount, repeatedIdCount);
             }
         }
         catch (Exception exception) when (exception is not OperationCanceledException)

@@ -19,4 +19,5 @@ artifacts:
   - "Kreisverkehr.DvbMetadataDecoder.dll"
 
 changelog: |
+  - fix: dvb metadata cache was not cleared after scan resulting in subsequent scans always finding the same data
   - chore: improve channel and EPG diagnostics; distinguish playlist ID duplicates from normal cache updates
